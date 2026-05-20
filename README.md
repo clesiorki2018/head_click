@@ -4,6 +4,13 @@
 
 Este projeto define a arquitetura inicial para um receptor USB HID baseado em ESP32-S3 com USB nativo. O dispositivo deve se comportar como teclado e mouse USB para um host PC.
 
+O cenário previsto tem dois lados:
+
+- Transmissor: outro ESP32 lê sensores, botões, acelerômetro, IMU, comandos configuráveis ou qualquer outra entrada física.
+- Receptor: este projeto roda no ESP32-S3 conectado por USB ao computador, recebe comandos via ESP-NOW e os entrega ao sistema operacional como eventos HID.
+
+> Estado atual: a arquitetura de recebimento, mapeamento e despacho já existe. O serviço `hid_service` ainda é um stub que registra os comandos no log. A etapa final de USB HID real ainda precisa ser implementada para o sistema operacional enxergar mouse e teclado de verdade.
+
 ## Arquitetura
 
 - `main/app_main.c` - inicialização do firmware e componentes principais.
@@ -20,6 +27,127 @@ Este projeto define a arquitetura inicial para um receptor USB HID baseado em ES
 3. O evento é publicado no `event_bus`.
 4. `app_controller` consome eventos do `event_bus`.
 5. Para cada evento de input, chama `hid_service` e envia o comando HID ao host.
+
+## Fluxo ponta a ponta
+
+O fluxo completo, considerando o firmware final com HID USB implementado, é:
+
+1. O ESP32 transmissor detecta uma intenção de entrada.
+   - Exemplo de mouse: mover ponteiro, pressionar botão esquerdo, soltar botão.
+   - Exemplo de teclado: pressionar `Enter`, soltar `Enter`, enviar uma tecla de atalho.
+2. O transmissor transforma essa intenção em um pacote ESP-NOW.
+   - O primeiro byte do payload é o opcode do comando.
+   - Os bytes seguintes carregam os argumentos do comando.
+3. O transmissor envia o pacote para o MAC do ESP32-S3 receptor.
+4. O receptor recebe o pacote no callback ESP-NOW em `espnow_receiver`.
+5. `input_mapper` interpreta o payload e cria um `input_event_t`.
+6. `event_bus` coloca o evento em uma fila FreeRTOS.
+7. `app_controller` consome a fila e chama a função HID correspondente.
+8. `hid_service` gera o relatório USB HID.
+9. O host USB recebe o relatório pelo barramento USB.
+10. O sistema operacional interpreta o dispositivo como HID padrão.
+11. Aplicativos recebem eventos normais de teclado e mouse, como se viessem de periféricos USB comuns.
+
+Na arquitetura atual, os opcodes iniciais são:
+
+| Opcode | Evento | Payload |
+| --- | --- | --- |
+| `0x01` | Movimento de mouse | `opcode`, `dx_lo`, `dx_hi`, `dy_lo`, `dy_hi` |
+| `0x02` | Botão de mouse | `opcode`, `button`, `pressed` |
+| `0x03` | Tecla de teclado | `opcode`, `keycode`, `pressed` |
+
+`dx` e `dy` são inteiros de 16 bits em little-endian. `pressed` usa `0` para solto e qualquer valor diferente de zero para pressionado.
+
+## Teclado e mouse ao mesmo tempo
+
+Sim, o projeto pode ser evoluído para receber teclado e mouse ao mesmo tempo. O modelo de domínio já separa eventos de mouse e teclado em `input_event_t`, e o `app_controller` já despacha cada tipo para uma função específica de HID.
+
+Existem duas formas comuns de expor isso ao sistema operacional:
+
+- Dispositivo HID composto: um único dispositivo USB com interface de mouse e interface de teclado.
+- Dispositivo HID com múltiplos report IDs: uma interface HID que diferencia relatórios de mouse e teclado por ID.
+
+Para o usuário do computador, o resultado esperado é o mesmo: o sistema operacional enxerga um teclado e um mouse HID padrão. Os eventos chegam em sequência pela fila, mas podem representar comandos misturados, como mover o mouse, clicar, pressionar `Ctrl`, pressionar uma tecla e soltar tudo depois.
+
+A configuração de quais teclas, cliques e movimentos enviar deve ficar no ESP32 transmissor. Este receptor deve continuar simples: validar pacote, mapear para evento de domínio e publicar no HID. Isso preserva a separação de responsabilidades:
+
+- Transmissor decide o significado dos sensores e botões.
+- Receptor converte comandos já decididos em HID USB.
+- Host PC recebe apenas eventos HID padronizados.
+
+Exemplo conceitual no transmissor:
+
+```c
+/* Botao fisico 1 vira clique esquerdo. */
+send_mouse_button(MOUSE_BUTTON_LEFT, true);
+send_mouse_button(MOUSE_BUTTON_LEFT, false);
+
+/* Movimento de cabeca vira deslocamento do ponteiro. */
+send_mouse_move(dx, dy);
+
+/* Acao configurada vira tecla Enter. */
+send_keyboard_key(HID_KEY_ENTER, true);
+send_keyboard_key(HID_KEY_ENTER, false);
+```
+
+## ESP-NOW
+
+ESP-NOW é um protocolo sem conexão da Espressif para comunicação direta entre dispositivos ESP usando rádio Wi-Fi 2.4 GHz. Ele não precisa de roteador, não precisa conectar em uma rede Wi-Fi tradicional e funciona por troca de pacotes entre peers.
+
+Neste projeto, o receptor inicializa o Wi-Fi em modo STA e depois registra um callback de recebimento ESP-NOW. Quando um pacote chega, o callback recebe os bytes do payload e os entrega ao mapper.
+
+Configuração mínima do receptor:
+
+1. Inicializar NVS.
+2. Inicializar `esp_netif`.
+3. Criar o event loop padrão.
+4. Criar a interface Wi-Fi STA.
+5. Inicializar Wi-Fi.
+6. Definir modo `WIFI_MODE_STA`.
+7. Iniciar Wi-Fi.
+8. Inicializar ESP-NOW.
+9. Registrar o callback de recebimento.
+
+Configuração mínima do transmissor:
+
+1. Inicializar NVS, rede e Wi-Fi.
+2. Definir o mesmo canal Wi-Fi usado pelo receptor.
+3. Inicializar ESP-NOW.
+4. Adicionar o receptor como peer usando o MAC dele.
+5. Enviar payloads com `esp_now_send`.
+
+Para comunicação estável, transmissor e receptor devem usar o mesmo canal. Se o receptor também estiver conectado a uma rede Wi-Fi, o canal geralmente fica preso ao canal do AP. Para um produto dedicado, é mais previsível fixar um canal e manter ambos os ESP32 nele.
+
+## Segurança do ESP-NOW
+
+ESP-NOW não deve ser tratado como uma interface confiável só porque não usa roteador. Qualquer comando que vira teclado ou mouse precisa de proteção, porque um pacote aceito pelo receptor pode virar ação no computador.
+
+Recomendações para este projeto:
+
+- Parear por MAC: aceitar apenas transmissores conhecidos.
+- Usar criptografia ESP-NOW com PMK e LMK.
+- Guardar chaves em NVS, nunca em arquivos versionados.
+- Validar tamanho exato do payload para cada opcode.
+- Adicionar contador de sequência para rejeitar replay.
+- Adicionar checksum, CRC ou autenticação de mensagem no payload da aplicação.
+- Ter modo de pareamento físico, acionado por botão, para cadastrar um novo transmissor.
+- Ignorar pacotes desconhecidos ou truncados sem gerar eventos HID.
+- Registrar falhas de validação com log técnico, sem despejar dados sensíveis.
+
+Termos importantes:
+
+- PMK: chave primária usada pelo ESP-NOW para proteger chaves locais.
+- LMK: chave local do peer, usada para criptografar a comunicação com aquele dispositivo.
+- Peer: dispositivo remoto cadastrado para envio ou recebimento.
+- Canal: canal Wi-Fi 2.4 GHz usado pelos dois ESP32.
+
+Uma estratégia segura para produção é:
+
+1. O receptor inicia aceitando apenas peers cadastrados.
+2. O usuário segura um botão físico para abrir uma janela curta de pareamento.
+3. O transmissor envia um pedido de pareamento.
+4. O receptor grava MAC e chave do transmissor em NVS.
+5. Fora do modo de pareamento, pacotes de MAC desconhecido são descartados.
 
 ## Documentação inicial
 
