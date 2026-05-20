@@ -18,7 +18,6 @@
  * limitations under the License.
  */
 
-#include <string.h>
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_now.h"
@@ -34,13 +33,15 @@ static const char *TAG = "espnow_receiver";
 
 static void espnow_receive_cb(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
+    (void)info;
+
     if (data == NULL || len <= 0) {
         ESP_LOGW(TAG, "Received empty ESP-NOW packet");
         return;
     }
 
     input_event_t event = input_mapper_map_from_espnow(data, (size_t)len);
-    if (event_bus_publish(&event) != ESP_OK) {
+    if (event_bus_publish_wait(&event, 0) != ESP_OK) {
         ESP_LOGW(TAG, "Failed to publish input event");
     }
 }
