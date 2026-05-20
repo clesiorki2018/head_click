@@ -1,0 +1,47 @@
+#include "event_bus.h"
+#include "esp_log.h"
+
+static const char *TAG = "event_bus";
+static QueueHandle_t s_event_queue = NULL;
+
+esp_err_t event_bus_init(void)
+{
+    if (s_event_queue != NULL) {
+        return ESP_OK;
+    }
+
+    s_event_queue = xQueueCreate(16, sizeof(input_event_t));
+    if (s_event_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create event queue");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t event_bus_publish(const input_event_t *event)
+{
+    if (s_event_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xQueueSend(s_event_queue, event, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "Event queue is full");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t event_bus_consume(input_event_t *event, TickType_t ticks_to_wait)
+{
+    if (s_event_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xQueueReceive(s_event_queue, event, ticks_to_wait) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_OK;
+}
