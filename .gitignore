@@ -38,7 +38,8 @@ flasher_args.json
 
 # Python artifacts
 venv/
-.env/
+.env
+.env.local
 .python_env/
 __pycache__/
 *.pyc

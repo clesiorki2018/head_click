@@ -42,6 +42,17 @@ Se ainda não estiver usando o ambiente ESP-IDF:
 idf.py -B /mnt/rambuild/head_click build
 ```
 
+## Variáveis de ambiente
+
+Use um arquivo `.env` local para valores sensíveis de ambiente que não devem ser comitados.
+Copie o template e preencha os valores adequados:
+
+```sh
+cp .env.example .env
+```
+
+O arquivo `.env` é ignorado pelo Git e pode conter variáveis de configuração locais, como porta serial de flash, credenciais de Wi-Fi ou tokens de API.
+
 ## Licença
 
 Este projeto está licenciado sob a Apache License 2.0.
