@@ -31,6 +31,7 @@ extern "C" {
 
 esp_err_t event_bus_init(void);
 esp_err_t event_bus_publish(const input_event_t *event);
+esp_err_t event_bus_publish_wait(const input_event_t *event, TickType_t ticks_to_wait);
 esp_err_t event_bus_consume(input_event_t *event, TickType_t ticks_to_wait);
 
 #ifdef __cplusplus

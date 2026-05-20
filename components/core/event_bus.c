@@ -22,6 +22,7 @@
 #include "esp_log.h"
 
 static const char *TAG = "event_bus";
+static const TickType_t EVENT_BUS_DEFAULT_PUBLISH_WAIT = pdMS_TO_TICKS(100);
 static QueueHandle_t s_event_queue = NULL;
 
 esp_err_t event_bus_init(void)
@@ -41,11 +42,20 @@ esp_err_t event_bus_init(void)
 
 esp_err_t event_bus_publish(const input_event_t *event)
 {
+    return event_bus_publish_wait(event, EVENT_BUS_DEFAULT_PUBLISH_WAIT);
+}
+
+esp_err_t event_bus_publish_wait(const input_event_t *event, TickType_t ticks_to_wait)
+{
     if (s_event_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (xQueueSend(s_event_queue, event, pdMS_TO_TICKS(100)) != pdTRUE) {
+    if (event == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (xQueueSend(s_event_queue, event, ticks_to_wait) != pdTRUE) {
         ESP_LOGW(TAG, "Event queue is full");
         return ESP_ERR_TIMEOUT;
     }
@@ -57,6 +67,10 @@ esp_err_t event_bus_consume(input_event_t *event, TickType_t ticks_to_wait)
 {
     if (s_event_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
+    }
+
+    if (event == NULL) {
+        return ESP_ERR_INVALID_ARG;
     }
 
     if (xQueueReceive(s_event_queue, event, ticks_to_wait) != pdTRUE) {
