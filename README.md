@@ -46,6 +46,12 @@ idf.py -B /mnt/rambuild/head_click build
 
 Este projeto está licenciado sob a Apache License 2.0.
 
+## Contribuindo
+
+Veja o guia de contribuição para padrões de commit, fluxo de trabalho de branches e diretrizes de código:
+
+- `docs/CONTRIBUTING.md`
+
 ## Git
 
 Use commits pequenos e atômicos para preservar a arquitetura e a clareza do projeto.
