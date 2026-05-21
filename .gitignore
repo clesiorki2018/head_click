@@ -48,3 +48,4 @@ __pycache__/
 
 # ESP-IDF toolchain and temporary
 .idf_tools/
+managed_components/

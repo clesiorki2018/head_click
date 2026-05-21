@@ -9,7 +9,7 @@ O cenário previsto tem dois lados:
 - Transmissor: outro ESP32 lê sensores, botões, acelerômetro, IMU, comandos configuráveis ou qualquer outra entrada física.
 - Receptor: este projeto roda no ESP32-S3 conectado por USB ao computador, recebe comandos via ESP-NOW e os entrega ao sistema operacional como eventos HID.
 
-> Estado atual: a arquitetura de recebimento, mapeamento e despacho já existe. O serviço `hid_service` ainda é um stub que registra os comandos no log. A etapa final de USB HID real ainda precisa ser implementada para o sistema operacional enxergar mouse e teclado de verdade.
+> Estado atual: a arquitetura de recebimento, mapeamento e despacho já existe. O serviço `hid_service` inicializa TinyUSB e envia relatórios HID reais de mouse e teclado. Joystick já existe no domínio e no protocolo ESP-NOW, mas ainda precisa de um report descriptor USB HID próprio para aparecer como gamepad no sistema operacional.
 
 ## Arquitetura
 

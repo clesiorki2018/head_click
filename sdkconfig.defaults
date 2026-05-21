@@ -1,0 +1,2 @@
+# USB HID device support.
+CONFIG_TINYUSB_HID_COUNT=1

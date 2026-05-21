@@ -19,31 +19,177 @@
  */
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "hid/hid_service.h"
+#include "tinyusb.h"
+#include "tinyusb_default_config.h"
+#include "class/hid/hid_device.h"
 
 static const char *TAG = "hid_service";
 
+enum {
+    HID_REPORT_ID_KEYBOARD = 1,
+    HID_REPORT_ID_MOUSE = 2,
+};
+
+#define HID_MOUSE_REPORT_LIMIT 127
+
+static const uint8_t s_hid_report_descriptor[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_REPORT_ID_KEYBOARD)),
+    TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(HID_REPORT_ID_MOUSE)),
+};
+
+static const char *s_hid_string_descriptor[] = {
+    (char[]){0x09, 0x04},
+    "head_click",
+    "head_click HID Receiver",
+    "000001",
+    "HID interface",
+};
+
+#define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_HID * TUD_HID_DESC_LEN)
+
+static const uint8_t s_hid_configuration_descriptor[] = {
+    TUD_CONFIG_DESCRIPTOR(1, 1, 0, TUSB_DESC_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    TUD_HID_DESCRIPTOR(0, 4, false, sizeof(s_hid_report_descriptor), 0x81, 16, 10),
+};
+
+static uint8_t s_mouse_buttons;
+
+static bool hid_ready(void)
+{
+    return tud_mounted() && tud_hid_ready();
+}
+
+static int8_t clamp_mouse_delta(int16_t value)
+{
+    if (value > HID_MOUSE_REPORT_LIMIT) {
+        return HID_MOUSE_REPORT_LIMIT;
+    }
+
+    if (value < -HID_MOUSE_REPORT_LIMIT) {
+        return -HID_MOUSE_REPORT_LIMIT;
+    }
+
+    return (int8_t)value;
+}
+
+uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
+{
+    (void)instance;
+    return s_hid_report_descriptor;
+}
+
+uint16_t tud_hid_get_report_cb(uint8_t instance,
+                               uint8_t report_id,
+                               hid_report_type_t report_type,
+                               uint8_t *buffer,
+                               uint16_t reqlen)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
+
+    return 0;
+}
+
+void tud_hid_set_report_cb(uint8_t instance,
+                           uint8_t report_id,
+                           hid_report_type_t report_type,
+                           uint8_t const *buffer,
+                           uint16_t bufsize)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)bufsize;
+}
+
 esp_err_t hid_service_init(void)
 {
-    ESP_LOGI(TAG, "Initializing HID service (stub)");
+    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+
+    tusb_cfg.descriptor.device = NULL;
+    tusb_cfg.descriptor.full_speed_config = s_hid_configuration_descriptor;
+    tusb_cfg.descriptor.string = s_hid_string_descriptor;
+    tusb_cfg.descriptor.string_count = sizeof(s_hid_string_descriptor) / sizeof(s_hid_string_descriptor[0]);
+#if (TUD_OPT_HIGH_SPEED)
+    tusb_cfg.descriptor.high_speed_config = s_hid_configuration_descriptor;
+#endif
+
+    esp_err_t err = tinyusb_driver_install(&tusb_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize TinyUSB HID: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "TinyUSB HID service ready");
     return ESP_OK;
 }
 
 esp_err_t hid_mouse_move(int16_t dx, int16_t dy)
 {
-    ESP_LOGI(TAG, "HID mouse move dx=%d dy=%d", dx, dy);
+    while (dx != 0 || dy != 0) {
+        if (!hid_ready()) {
+            ESP_LOGW(TAG, "HID mouse move dropped: USB host is not ready");
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        int8_t report_dx = clamp_mouse_delta(dx);
+        int8_t report_dy = clamp_mouse_delta(dy);
+
+        tud_hid_mouse_report(HID_REPORT_ID_MOUSE, s_mouse_buttons, report_dx, report_dy, 0, 0);
+
+        dx -= report_dx;
+        dy -= report_dy;
+
+        if (dx != 0 || dy != 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+
     return ESP_OK;
 }
 
 esp_err_t hid_mouse_button(uint8_t button, bool pressed)
 {
-    ESP_LOGI(TAG, "HID mouse button button=%u pressed=%d", button, pressed);
+    if (button >= 8) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (pressed) {
+        s_mouse_buttons |= (uint8_t)(1U << button);
+    } else {
+        s_mouse_buttons &= (uint8_t)~(1U << button);
+    }
+
+    if (!hid_ready()) {
+        ESP_LOGW(TAG, "HID mouse button dropped: USB host is not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    tud_hid_mouse_report(HID_REPORT_ID_MOUSE, s_mouse_buttons, 0, 0, 0, 0);
     return ESP_OK;
 }
 
 esp_err_t hid_keyboard_key(uint8_t keycode, bool pressed)
 {
-    ESP_LOGI(TAG, "HID keyboard key keycode=%u pressed=%d", keycode, pressed);
+    if (!hid_ready()) {
+        ESP_LOGW(TAG, "HID keyboard key dropped: USB host is not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (pressed) {
+        uint8_t keycodes[6] = {keycode};
+        tud_hid_keyboard_report(HID_REPORT_ID_KEYBOARD, 0, keycodes);
+    } else {
+        tud_hid_keyboard_report(HID_REPORT_ID_KEYBOARD, 0, NULL);
+    }
+
     return ESP_OK;
 }
 
