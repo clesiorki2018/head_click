@@ -19,6 +19,7 @@
  */
 
 #include <string.h>
+#include "psa/crypto.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_now.h"
@@ -33,49 +34,234 @@
 
 static const char *TAG = "espnow_receiver";
 
+#define ESPNOW_APP_PACKET_MAGIC 0xa5
+#define ESPNOW_APP_PACKET_VERSION 0x01
+#define ESPNOW_APP_PACKET_HEADER_SIZE 6
+#define ESPNOW_APP_PACKET_TAG_SIZE 16
+#define ESPNOW_APP_SEQUENCE_MAX_WINDOW 64
+
+typedef struct {
+    bool initialized;
+    uint32_t highest_sequence;
+    uint64_t seen_mask;
+} espnow_replay_state_t;
+
+static espnow_replay_state_t s_replay_states[SYSTEM_CONFIG_MAX_PEERS];
+
 static bool mac_matches(const uint8_t lhs[SYSTEM_CONFIG_MAC_SIZE],
                         const uint8_t rhs[SYSTEM_CONFIG_MAC_SIZE])
 {
     return memcmp(lhs, rhs, SYSTEM_CONFIG_MAC_SIZE) == 0;
 }
 
-static bool espnow_is_authorized_sender(const esp_now_recv_info_t *info)
+static uint32_t read_u32_le(const uint8_t *data)
+{
+    return (uint32_t)data[0] |
+           ((uint32_t)data[1] << 8) |
+           ((uint32_t)data[2] << 16) |
+           ((uint32_t)data[3] << 24);
+}
+
+static bool app_auth_key_is_configured(const system_config_security_t *config)
+{
+    uint8_t folded = 0;
+
+    for (size_t index = 0; index < SYSTEM_CONFIG_APP_AUTH_KEY_SIZE; ++index) {
+        folded |= config->app_auth_key[index];
+    }
+
+    return folded != 0;
+}
+
+static const system_config_esp_now_peer_t *espnow_find_authorized_sender(const esp_now_recv_info_t *info,
+                                                                         size_t *peer_index)
 {
     const system_config_security_t *config = system_config_get_security();
 
     if (config->pairing_enabled) {
-        return true;
+        if (peer_index != NULL) {
+            *peer_index = SYSTEM_CONFIG_MAX_PEERS;
+        }
+
+        return NULL;
     }
 
     if (info == NULL || info->src_addr == NULL) {
-        return false;
+        return NULL;
     }
 
     for (size_t index = 0; index < SYSTEM_CONFIG_MAX_PEERS; ++index) {
         const system_config_esp_now_peer_t *peer = &config->peers[index];
 
         if (peer->enabled && peer->has_mac && mac_matches(peer->mac, info->src_addr)) {
-            return true;
+            if (peer_index != NULL) {
+                *peer_index = index;
+            }
+
+            return peer;
         }
     }
 
-    return false;
+    return NULL;
+}
+
+static bool espnow_sequence_is_fresh(size_t peer_index, uint32_t sequence)
+{
+    const system_config_security_t *config = system_config_get_security();
+    espnow_replay_state_t *state = &s_replay_states[peer_index];
+    uint8_t window = config->sequence_window;
+
+    if (window == 0 || window > ESPNOW_APP_SEQUENCE_MAX_WINDOW) {
+        window = ESPNOW_APP_SEQUENCE_MAX_WINDOW;
+    }
+
+    if (!state->initialized) {
+        state->initialized = true;
+        state->highest_sequence = sequence;
+        state->seen_mask = 1ULL;
+        return true;
+    }
+
+    if (sequence > state->highest_sequence) {
+        uint32_t delta = sequence - state->highest_sequence;
+
+        state->seen_mask = delta >= ESPNOW_APP_SEQUENCE_MAX_WINDOW ? 0ULL : state->seen_mask << delta;
+        state->seen_mask |= 1ULL;
+        state->highest_sequence = sequence;
+        return true;
+    }
+
+    uint32_t age = state->highest_sequence - sequence;
+    if (age >= window) {
+        return false;
+    }
+
+    uint64_t bit = 1ULL << age;
+    if ((state->seen_mask & bit) != 0) {
+        return false;
+    }
+
+    state->seen_mask |= bit;
+    return true;
+}
+
+static esp_err_t espnow_verify_app_packet(const uint8_t *data, size_t len)
+{
+    const system_config_security_t *config = system_config_get_security();
+    uint8_t digest[32];
+    size_t digest_len = 0;
+
+    if (!app_auth_key_is_configured(config)) {
+        ESP_LOGE(TAG, "Application authentication key is not configured");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+    psa_key_id_t key_id = PSA_KEY_ID_NULL;
+
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_HMAC);
+    psa_set_key_bits(&attributes, SYSTEM_CONFIG_APP_AUTH_KEY_SIZE * 8);
+    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
+    psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+    psa_status_t status = psa_import_key(&attributes,
+                                         config->app_auth_key,
+                                         SYSTEM_CONFIG_APP_AUTH_KEY_SIZE,
+                                         &key_id);
+    psa_reset_key_attributes(&attributes);
+    if (status != PSA_SUCCESS) {
+        return ESP_FAIL;
+    }
+
+    status = psa_mac_compute(key_id,
+                             PSA_ALG_HMAC(PSA_ALG_SHA_256),
+                             data,
+                             len - ESPNOW_APP_PACKET_TAG_SIZE,
+                             digest,
+                             sizeof(digest),
+                             &digest_len);
+    psa_destroy_key(key_id);
+    if (status != PSA_SUCCESS || digest_len < ESPNOW_APP_PACKET_TAG_SIZE) {
+        return ESP_FAIL;
+    }
+
+    const uint8_t *received_tag = &data[len - ESPNOW_APP_PACKET_TAG_SIZE];
+    uint8_t diff = 0;
+
+    for (size_t index = 0; index < ESPNOW_APP_PACKET_TAG_SIZE; ++index) {
+        diff |= digest[index] ^ received_tag[index];
+    }
+
+    return diff == 0 ? ESP_OK : ESP_ERR_INVALID_CRC;
+}
+
+static esp_err_t espnow_unwrap_app_payload(const uint8_t *data,
+                                           size_t len,
+                                           size_t peer_index,
+                                           const uint8_t **payload,
+                                           size_t *payload_size)
+{
+    const system_config_security_t *config = system_config_get_security();
+    size_t min_packet_size = ESPNOW_APP_PACKET_HEADER_SIZE + 1 + ESPNOW_APP_PACKET_TAG_SIZE;
+
+    if (len < min_packet_size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    if (data[0] != ESPNOW_APP_PACKET_MAGIC || data[1] != ESPNOW_APP_PACKET_VERSION) {
+        return ESP_ERR_INVALID_VERSION;
+    }
+
+    esp_err_t err = espnow_verify_app_packet(data, len);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    uint32_t sequence = read_u32_le(&data[2]);
+    if (config->replay_protection_enabled && peer_index >= SYSTEM_CONFIG_MAX_PEERS) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (config->replay_protection_enabled && !espnow_sequence_is_fresh(peer_index, sequence)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    *payload = &data[ESPNOW_APP_PACKET_HEADER_SIZE];
+    *payload_size = len - ESPNOW_APP_PACKET_HEADER_SIZE - ESPNOW_APP_PACKET_TAG_SIZE;
+    return ESP_OK;
 }
 
 static void espnow_receive_cb(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
+    const system_config_security_t *config = system_config_get_security();
+    const uint8_t *input_payload = data;
+    size_t input_payload_size = (size_t)len;
+    size_t peer_index = SYSTEM_CONFIG_MAX_PEERS;
+
     if (data == NULL || len <= 0) {
         ESP_LOGW(TAG, "Received empty ESP-NOW packet");
         return;
     }
 
-    if (!espnow_is_authorized_sender(info)) {
+    if (espnow_find_authorized_sender(info, &peer_index) == NULL && !config->pairing_enabled) {
         ESP_LOGW(TAG, "Rejected ESP-NOW packet from unauthorized sender");
         return;
     }
 
+    if (data[0] == ESPNOW_APP_PACKET_MAGIC || config->replay_protection_enabled) {
+        esp_err_t err = espnow_unwrap_app_payload(data,
+                                                  (size_t)len,
+                                                  peer_index,
+                                                  &input_payload,
+                                                  &input_payload_size);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Rejected unauthenticated ESP-NOW packet: %s", esp_err_to_name(err));
+            return;
+        }
+    }
+
     input_event_t event;
-    if (input_mapper_map_from_espnow(data, (size_t)len, &event) != ESP_OK) {
+    if (input_mapper_map_from_espnow(input_payload, input_payload_size, &event) != ESP_OK) {
         ESP_LOGW(TAG, "Rejected invalid ESP-NOW input payload");
         return;
     }
@@ -176,6 +362,19 @@ static esp_err_t espnow_configure_security(void)
 
     if (!config->has_env) {
         ESP_LOGW(TAG, "No local .env configuration found; ESP-NOW peers are not configured");
+    }
+
+    if (config->replay_protection_enabled && !app_auth_key_is_configured(config)) {
+        ESP_LOGE(TAG, "Replay protection requires APP_AUTH_KEY_HEX");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (app_auth_key_is_configured(config)) {
+        psa_status_t status = psa_crypto_init();
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "PSA crypto init failed: %d", (int)status);
+            return ESP_FAIL;
+        }
     }
 
     if (config->encryption_enabled) {

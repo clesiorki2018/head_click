@@ -27,7 +27,8 @@ Este projeto é uma base para um receptor USB HID de acessibilidade usando ESP32
 - `components/transport_espnow`
   - `espnow_receiver.c` / `espnow_receiver.h`
   - Inicializa Wi-Fi e ESP-NOW.
-  - Recebe pacotes e converte para eventos do domínio.
+  - Autoriza o MAC de origem, valida o envelope seguro da aplicação e rejeita replay.
+  - Recebe pacotes e entrega payloads de comando ao domínio de input.
 
 - `components/app`
   - `app_controller.c` / `app_controller.h`

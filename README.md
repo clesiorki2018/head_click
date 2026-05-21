@@ -60,6 +60,18 @@ Na arquitetura atual, os opcodes iniciais são:
 
 `dx`, `dy`, `x`, `y`, `z` e `rz` são inteiros de 16 bits em little-endian. `pressed` usa `0` para solto e qualquer valor diferente de zero para pressionado. O receptor rejeita payloads com tamanho diferente do esperado para cada opcode.
 
+Quando `APP_REPLAY_PROTECTION_ENABLED=1`, o payload ESP-NOW precisa usar o envelope seguro da aplicação. O comando HID acima fica dentro do campo `command_payload`:
+
+| Campo | Tamanho | Descrição |
+| --- | --- | --- |
+| `magic` | 1 byte | Valor fixo `0xa5` |
+| `version` | 1 byte | Valor fixo `0x01` |
+| `sequence` | 4 bytes | Contador `uint32_t` em little-endian, crescente por transmissor |
+| `command_payload` | variável | Um dos payloads de comando da tabela de opcodes |
+| `tag` | 16 bytes | Primeiros 16 bytes do HMAC-SHA256 |
+
+O HMAC-SHA256 usa `APP_AUTH_KEY_HEX` e cobre todos os bytes anteriores ao campo `tag`: `magic`, `version`, `sequence` e `command_payload`. O receptor rejeita pacotes com tag inválida, versão desconhecida, sequência repetida ou sequência antiga fora da janela `APP_SEQUENCE_WINDOW`.
+
 ## Teclado, mouse e joystick ao mesmo tempo
 
 Sim, o projeto recebe comandos de teclado, mouse e joystick no mesmo receptor. O modelo de domínio separa esses eventos em `input_event_t`, e o `app_controller` despacha cada tipo para uma função específica de HID.
@@ -162,6 +174,7 @@ Em cada transmissor, grave:
 - PMK compartilhada.
 - LMK específica daquele transmissor.
 - Chave de autenticação da aplicação, quando a validação HMAC/replay estiver habilitada.
+- Contador de sequência persistente ou monotônico para montar o envelope seguro.
 
 Cada transmissor deve usar apenas a LMK do seu papel. Por exemplo, o ESP32 `combo` usa a LMK do peer `combo`; o ESP32 de mouse usa a LMK do peer `mouse`; o ESP32 de teclado usa a LMK do peer `keyboard`; o ESP32 de joystick usa a LMK do peer `joystick`. Isso permite revogar ou trocar a chave de um transmissor sem trocar todas as outras.
 
@@ -199,8 +212,7 @@ Recomendações para este projeto:
 - Usar criptografia ESP-NOW com PMK e LMK.
 - Guardar chaves em NVS, nunca em arquivos versionados.
 - Validar tamanho exato do payload para cada opcode.
-- Adicionar contador de sequência para rejeitar replay.
-- Adicionar checksum, CRC ou autenticação de mensagem no payload da aplicação.
+- Usar o envelope seguro da aplicação com contador de sequência e HMAC-SHA256.
 - Ter modo de pareamento físico, acionado por botão, para cadastrar um novo transmissor.
 - Ignorar pacotes desconhecidos ou truncados sem gerar eventos HID.
 - Registrar falhas de validação com log técnico, sem despejar dados sensíveis.
