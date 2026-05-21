@@ -85,6 +85,8 @@ Existem duas formas comuns de expor isso ao sistema operacional:
 
 Este projeto usa múltiplos report IDs em uma interface HID. Para o usuário do computador, o sistema operacional enxerga entradas HID padrão. Os eventos chegam em sequência pela fila, mas podem representar comandos misturados, como mover o mouse, clicar, pressionar `Ctrl`, acionar uma tecla, mover um eixo de joystick e soltar tudo depois.
 
+Como proteção operacional, o receptor solta automaticamente teclas, botões de mouse e botões/eixos de gamepad se ficar 3 segundos sem receber eventos. Isso reduz o risco de uma tecla ou clique ficar preso no sistema operacional caso o emissor reinicie, desligue ou perca comunicação no meio de um comando.
+
 A configuração de quais teclas, cliques e movimentos enviar deve ficar no ESP32 transmissor. Este receptor deve continuar simples: validar pacote, mapear para evento de domínio e publicar no HID. Isso preserva a separação de responsabilidades:
 
 - Transmissor decide o significado dos sensores e botões.

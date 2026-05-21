@@ -19,6 +19,7 @@
  */
 
 #include <limits.h>
+#include <string.h>
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -37,6 +38,8 @@ enum {
 };
 
 #define HID_MOUSE_REPORT_LIMIT 127
+#define HID_KEYBOARD_ROLLOVER_KEYS 6
+#define HID_REPORT_READY_TIMEOUT_MS 20
 
 static const uint8_t s_hid_report_descriptor[] = {
     TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_REPORT_ID_KEYBOARD)),
@@ -60,14 +63,29 @@ static const uint8_t s_hid_configuration_descriptor[] = {
 };
 
 static uint8_t s_mouse_buttons;
+static uint8_t s_keyboard_keycodes[HID_KEYBOARD_ROLLOVER_KEYS];
 static uint32_t s_gamepad_buttons;
 static hid_gamepad_report_t s_gamepad_report = {
     .hat = GAMEPAD_HAT_CENTERED,
 };
 
-static bool hid_ready(void)
+static bool hid_wait_ready(void)
 {
-    return tud_mounted() && tud_hid_ready();
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(HID_REPORT_READY_TIMEOUT_MS);
+
+    while (tud_mounted()) {
+        if (tud_hid_ready()) {
+            return true;
+        }
+
+        if (xTaskGetTickCount() >= deadline) {
+            break;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    return false;
 }
 
 static int8_t clamp_mouse_delta(int16_t value)
@@ -100,7 +118,7 @@ static int8_t scale_axis_to_gamepad(int16_t value)
 
 static esp_err_t send_gamepad_report(void)
 {
-    if (!hid_ready()) {
+    if (!hid_wait_ready()) {
         ESP_LOGW(TAG, "HID joystick report dropped: USB host is not ready");
         return ESP_ERR_INVALID_STATE;
     }
@@ -115,6 +133,86 @@ static esp_err_t send_gamepad_report(void)
                            s_gamepad_report.hat,
                            s_gamepad_buttons);
     return ESP_OK;
+}
+
+static esp_err_t send_keyboard_report(void)
+{
+    if (!hid_wait_ready()) {
+        ESP_LOGW(TAG, "HID keyboard report dropped: USB host is not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    tud_hid_keyboard_report(HID_REPORT_ID_KEYBOARD, 0, s_keyboard_keycodes);
+    return ESP_OK;
+}
+
+static esp_err_t send_mouse_report(int8_t dx, int8_t dy)
+{
+    if (!hid_wait_ready()) {
+        ESP_LOGW(TAG, "HID mouse report dropped: USB host is not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    tud_hid_mouse_report(HID_REPORT_ID_MOUSE, s_mouse_buttons, dx, dy, 0, 0);
+    return ESP_OK;
+}
+
+static bool keyboard_key_is_pressed(uint8_t keycode)
+{
+    for (size_t index = 0; index < HID_KEYBOARD_ROLLOVER_KEYS; ++index) {
+        if (s_keyboard_keycodes[index] == keycode) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static esp_err_t keyboard_press_key(uint8_t keycode)
+{
+    if (keyboard_key_is_pressed(keycode)) {
+        return ESP_OK;
+    }
+
+    for (size_t index = 0; index < HID_KEYBOARD_ROLLOVER_KEYS; ++index) {
+        if (s_keyboard_keycodes[index] == 0) {
+            s_keyboard_keycodes[index] = keycode;
+            return ESP_OK;
+        }
+    }
+
+    return ESP_ERR_NO_MEM;
+}
+
+static void keyboard_release_key(uint8_t keycode)
+{
+    for (size_t index = 0; index < HID_KEYBOARD_ROLLOVER_KEYS; ++index) {
+        if (s_keyboard_keycodes[index] == keycode) {
+            s_keyboard_keycodes[index] = 0;
+        }
+    }
+}
+
+static bool hid_state_is_active(void)
+{
+    if (s_mouse_buttons != 0 || s_gamepad_buttons != 0) {
+        return true;
+    }
+
+    if (s_gamepad_report.x != 0 || s_gamepad_report.y != 0 ||
+        s_gamepad_report.z != 0 || s_gamepad_report.rz != 0 ||
+        s_gamepad_report.rx != 0 || s_gamepad_report.ry != 0 ||
+        s_gamepad_report.hat != GAMEPAD_HAT_CENTERED) {
+        return true;
+    }
+
+    for (size_t index = 0; index < HID_KEYBOARD_ROLLOVER_KEYS; ++index) {
+        if (s_keyboard_keycodes[index] != 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
@@ -176,15 +274,13 @@ esp_err_t hid_service_init(void)
 esp_err_t hid_mouse_move(int16_t dx, int16_t dy)
 {
     while (dx != 0 || dy != 0) {
-        if (!hid_ready()) {
-            ESP_LOGW(TAG, "HID mouse move dropped: USB host is not ready");
-            return ESP_ERR_INVALID_STATE;
-        }
-
         int8_t report_dx = clamp_mouse_delta(dx);
         int8_t report_dy = clamp_mouse_delta(dy);
 
-        tud_hid_mouse_report(HID_REPORT_ID_MOUSE, s_mouse_buttons, report_dx, report_dy, 0, 0);
+        esp_err_t err = send_mouse_report(report_dx, report_dy);
+        if (err != ESP_OK) {
+            return err;
+        }
 
         dx -= report_dx;
         dy -= report_dy;
@@ -209,30 +305,27 @@ esp_err_t hid_mouse_button(uint8_t button, bool pressed)
         s_mouse_buttons &= (uint8_t)~(1U << button);
     }
 
-    if (!hid_ready()) {
-        ESP_LOGW(TAG, "HID mouse button dropped: USB host is not ready");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    tud_hid_mouse_report(HID_REPORT_ID_MOUSE, s_mouse_buttons, 0, 0, 0, 0);
-    return ESP_OK;
+    return send_mouse_report(0, 0);
 }
 
 esp_err_t hid_keyboard_key(uint8_t keycode, bool pressed)
 {
-    if (!hid_ready()) {
-        ESP_LOGW(TAG, "HID keyboard key dropped: USB host is not ready");
-        return ESP_ERR_INVALID_STATE;
+    esp_err_t err;
+
+    if (keycode == 0) {
+        return ESP_ERR_INVALID_ARG;
     }
 
     if (pressed) {
-        uint8_t keycodes[6] = {keycode};
-        tud_hid_keyboard_report(HID_REPORT_ID_KEYBOARD, 0, keycodes);
+        err = keyboard_press_key(keycode);
+        if (err != ESP_OK) {
+            return err;
+        }
     } else {
-        tud_hid_keyboard_report(HID_REPORT_ID_KEYBOARD, 0, NULL);
+        keyboard_release_key(keycode);
     }
 
-    return ESP_OK;
+    return send_keyboard_report();
 }
 
 esp_err_t hid_joystick_axis(int16_t x, int16_t y, int16_t z, int16_t rz)
@@ -241,6 +334,36 @@ esp_err_t hid_joystick_axis(int16_t x, int16_t y, int16_t z, int16_t rz)
     s_gamepad_report.y = scale_axis_to_gamepad(y);
     s_gamepad_report.z = scale_axis_to_gamepad(z);
     s_gamepad_report.rz = scale_axis_to_gamepad(rz);
+
+    return send_gamepad_report();
+}
+
+esp_err_t hid_release_all(void)
+{
+    if (!hid_state_is_active()) {
+        return ESP_OK;
+    }
+
+    s_mouse_buttons = 0;
+    memset(s_keyboard_keycodes, 0, sizeof(s_keyboard_keycodes));
+    s_gamepad_buttons = 0;
+    s_gamepad_report.x = 0;
+    s_gamepad_report.y = 0;
+    s_gamepad_report.z = 0;
+    s_gamepad_report.rz = 0;
+    s_gamepad_report.rx = 0;
+    s_gamepad_report.ry = 0;
+    s_gamepad_report.hat = GAMEPAD_HAT_CENTERED;
+
+    esp_err_t err = send_keyboard_report();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = send_mouse_report(0, 0);
+    if (err != ESP_OK) {
+        return err;
+    }
 
     return send_gamepad_report();
 }

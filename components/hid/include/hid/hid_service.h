@@ -34,6 +34,7 @@ esp_err_t hid_mouse_button(uint8_t button, bool pressed);
 esp_err_t hid_keyboard_key(uint8_t keycode, bool pressed);
 esp_err_t hid_joystick_axis(int16_t x, int16_t y, int16_t z, int16_t rz);
 esp_err_t hid_joystick_button(uint8_t button, bool pressed);
+esp_err_t hid_release_all(void);
 
 #ifdef __cplusplus
 }

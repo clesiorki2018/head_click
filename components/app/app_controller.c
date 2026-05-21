@@ -27,13 +27,22 @@
 
 static const char *TAG = "app_controller";
 
+#define APP_CONTROLLER_HID_IDLE_RELEASE_TIMEOUT_MS 3000
+
 static void app_controller_task(void *arg)
 {
     (void)arg;
     input_event_t event;
 
     while (true) {
-        if (event_bus_consume(&event, portMAX_DELAY) == ESP_OK) {
+        esp_err_t err = event_bus_consume(&event,
+                                          pdMS_TO_TICKS(APP_CONTROLLER_HID_IDLE_RELEASE_TIMEOUT_MS));
+        if (err == ESP_ERR_TIMEOUT) {
+            hid_release_all();
+            continue;
+        }
+
+        if (err == ESP_OK) {
             switch (event.type) {
             case INPUT_EVENT_MOUSE_MOVE:
                 hid_mouse_move(event.data.mouse_move.dx, event.data.mouse_move.dy);

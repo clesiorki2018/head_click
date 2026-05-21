@@ -33,6 +33,7 @@ Este projeto é uma base para um receptor USB HID de acessibilidade usando ESP32
 - `components/app`
   - `app_controller.c` / `app_controller.h`
   - Consome eventos e aciona o serviço HID.
+  - Solta o estado HID se a fila ficar inativa por tempo suficiente para indicar perda do emissor.
 
 ## Fluxo de eventos
 
