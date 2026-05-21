@@ -62,7 +62,7 @@ Os valores canônicos ficam em `components/input/include/input/input_protocol.h`
 
 `dx`, `dy`, `x`, `y`, `z` e `rz` são inteiros de 16 bits em little-endian. `pressed` usa `0` para solto e qualquer valor diferente de zero para pressionado. O receptor rejeita payloads com tamanho diferente do esperado para cada opcode.
 
-Quando `APP_REPLAY_PROTECTION_ENABLED=1`, o payload ESP-NOW precisa usar o envelope seguro da aplicação. O comando HID acima fica dentro do campo `command_payload`:
+Quando `APP_REPLAY_PROTECTION_ENABLED=1`, o payload ESP-NOW precisa usar o envelope seguro da aplicação. Os valores canônicos do envelope ficam em `components/transport_espnow/include/transport_espnow/espnow_app_protocol.h`. O comando HID acima fica dentro do campo `command_payload`:
 
 | Campo | Tamanho | Descrição |
 | --- | --- | --- |

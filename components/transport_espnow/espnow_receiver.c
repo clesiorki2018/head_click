@@ -31,14 +31,11 @@
 #include "core/event_bus.h"
 #include "input/input_mapper.h"
 #include "system_config/system_config.h"
+#include "transport_espnow/espnow_app_protocol.h"
 #include "transport_espnow/espnow_receiver.h"
 
 static const char *TAG = "espnow_receiver";
 
-#define ESPNOW_APP_PACKET_MAGIC 0xa5
-#define ESPNOW_APP_PACKET_VERSION 0x01
-#define ESPNOW_APP_PACKET_HEADER_SIZE 6
-#define ESPNOW_APP_PACKET_TAG_SIZE 16
 #define ESPNOW_APP_SEQUENCE_MAX_WINDOW 64
 
 typedef struct {
@@ -195,19 +192,19 @@ static esp_err_t espnow_verify_app_packet(const uint8_t *data, size_t len)
     status = psa_mac_compute(key_id,
                              PSA_ALG_HMAC(PSA_ALG_SHA_256),
                              data,
-                             len - ESPNOW_APP_PACKET_TAG_SIZE,
+                                 len - ESPNOW_APP_PROTOCOL_TAG_SIZE,
                              digest,
                              sizeof(digest),
                              &digest_len);
     psa_destroy_key(key_id);
-    if (status != PSA_SUCCESS || digest_len < ESPNOW_APP_PACKET_TAG_SIZE) {
+    if (status != PSA_SUCCESS || digest_len < ESPNOW_APP_PROTOCOL_TAG_SIZE) {
         return ESP_FAIL;
     }
 
-    const uint8_t *received_tag = &data[len - ESPNOW_APP_PACKET_TAG_SIZE];
+    const uint8_t *received_tag = &data[len - ESPNOW_APP_PROTOCOL_TAG_SIZE];
     uint8_t diff = 0;
 
-    for (size_t index = 0; index < ESPNOW_APP_PACKET_TAG_SIZE; ++index) {
+    for (size_t index = 0; index < ESPNOW_APP_PROTOCOL_TAG_SIZE; ++index) {
         diff |= digest[index] ^ received_tag[index];
     }
 
@@ -221,13 +218,13 @@ static esp_err_t espnow_unwrap_app_payload(const uint8_t *data,
                                            size_t *payload_size)
 {
     const system_config_security_t *config = system_config_get_security();
-    size_t min_packet_size = ESPNOW_APP_PACKET_HEADER_SIZE + 1 + ESPNOW_APP_PACKET_TAG_SIZE;
+    size_t min_packet_size = ESPNOW_APP_PROTOCOL_HEADER_SIZE + 1 + ESPNOW_APP_PROTOCOL_TAG_SIZE;
 
     if (len < min_packet_size) {
         return ESP_ERR_INVALID_SIZE;
     }
 
-    if (data[0] != ESPNOW_APP_PACKET_MAGIC || data[1] != ESPNOW_APP_PACKET_VERSION) {
+    if (data[0] != ESPNOW_APP_PROTOCOL_MAGIC || data[1] != ESPNOW_APP_PROTOCOL_VERSION) {
         return ESP_ERR_INVALID_VERSION;
     }
 
@@ -245,8 +242,8 @@ static esp_err_t espnow_unwrap_app_payload(const uint8_t *data,
         return ESP_ERR_INVALID_STATE;
     }
 
-    *payload = &data[ESPNOW_APP_PACKET_HEADER_SIZE];
-    *payload_size = len - ESPNOW_APP_PACKET_HEADER_SIZE - ESPNOW_APP_PACKET_TAG_SIZE;
+    *payload = &data[ESPNOW_APP_PROTOCOL_HEADER_SIZE];
+    *payload_size = len - ESPNOW_APP_PROTOCOL_HEADER_SIZE - ESPNOW_APP_PROTOCOL_TAG_SIZE;
     return ESP_OK;
 }
 
@@ -267,7 +264,7 @@ static void espnow_receive_cb(const esp_now_recv_info_t *info, const uint8_t *da
         return;
     }
 
-    if (data[0] == ESPNOW_APP_PACKET_MAGIC || config->replay_protection_enabled) {
+    if (data[0] == ESPNOW_APP_PROTOCOL_MAGIC || config->replay_protection_enabled) {
         esp_err_t err = espnow_unwrap_app_payload(data,
                                                   (size_t)len,
                                                   peer_index,
