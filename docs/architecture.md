@@ -16,8 +16,8 @@ Este projeto é uma base para um receptor USB HID de acessibilidade usando ESP32
 
 - `components/hid`
   - `hid_service.c` / `hid_service.h`
-  - Inicializa TinyUSB e expõe relatórios HID de mouse e teclado.
-  - Mantém joystick como interface de serviço até o report descriptor de gamepad ser implementado.
+  - Inicializa TinyUSB e expõe relatórios HID de teclado, mouse e gamepad.
+  - Usa report IDs separados para cada tipo de relatório HID.
 
 - `components/input`
   - `input_event.h`

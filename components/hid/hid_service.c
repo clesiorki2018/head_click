@@ -18,6 +18,8 @@
  * limitations under the License.
  */
 
+#include <limits.h>
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -31,6 +33,7 @@ static const char *TAG = "hid_service";
 enum {
     HID_REPORT_ID_KEYBOARD = 1,
     HID_REPORT_ID_MOUSE = 2,
+    HID_REPORT_ID_GAMEPAD = 3,
 };
 
 #define HID_MOUSE_REPORT_LIMIT 127
@@ -38,6 +41,7 @@ enum {
 static const uint8_t s_hid_report_descriptor[] = {
     TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(HID_REPORT_ID_KEYBOARD)),
     TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(HID_REPORT_ID_MOUSE)),
+    TUD_HID_REPORT_DESC_GAMEPAD(HID_REPORT_ID(HID_REPORT_ID_GAMEPAD)),
 };
 
 static const char *s_hid_string_descriptor[] = {
@@ -56,6 +60,10 @@ static const uint8_t s_hid_configuration_descriptor[] = {
 };
 
 static uint8_t s_mouse_buttons;
+static uint32_t s_gamepad_buttons;
+static hid_gamepad_report_t s_gamepad_report = {
+    .hat = GAMEPAD_HAT_CENTERED,
+};
 
 static bool hid_ready(void)
 {
@@ -73,6 +81,40 @@ static int8_t clamp_mouse_delta(int16_t value)
     }
 
     return (int8_t)value;
+}
+
+static int8_t scale_axis_to_gamepad(int16_t value)
+{
+    int32_t scaled = ((int32_t)value * 127) / INT16_MAX;
+
+    if (scaled > 127) {
+        return 127;
+    }
+
+    if (scaled < -127) {
+        return -127;
+    }
+
+    return (int8_t)scaled;
+}
+
+static esp_err_t send_gamepad_report(void)
+{
+    if (!hid_ready()) {
+        ESP_LOGW(TAG, "HID joystick report dropped: USB host is not ready");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    tud_hid_gamepad_report(HID_REPORT_ID_GAMEPAD,
+                           s_gamepad_report.x,
+                           s_gamepad_report.y,
+                           s_gamepad_report.z,
+                           s_gamepad_report.rz,
+                           s_gamepad_report.rx,
+                           s_gamepad_report.ry,
+                           s_gamepad_report.hat,
+                           s_gamepad_buttons);
+    return ESP_OK;
 }
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
@@ -195,12 +237,25 @@ esp_err_t hid_keyboard_key(uint8_t keycode, bool pressed)
 
 esp_err_t hid_joystick_axis(int16_t x, int16_t y, int16_t z, int16_t rz)
 {
-    ESP_LOGI(TAG, "HID joystick axis x=%d y=%d z=%d rz=%d", x, y, z, rz);
-    return ESP_OK;
+    s_gamepad_report.x = scale_axis_to_gamepad(x);
+    s_gamepad_report.y = scale_axis_to_gamepad(y);
+    s_gamepad_report.z = scale_axis_to_gamepad(z);
+    s_gamepad_report.rz = scale_axis_to_gamepad(rz);
+
+    return send_gamepad_report();
 }
 
 esp_err_t hid_joystick_button(uint8_t button, bool pressed)
 {
-    ESP_LOGI(TAG, "HID joystick button button=%u pressed=%d", button, pressed);
-    return ESP_OK;
+    if (button >= 32) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (pressed) {
+        s_gamepad_buttons |= (uint32_t)(1UL << button);
+    } else {
+        s_gamepad_buttons &= (uint32_t)~(1UL << button);
+    }
+
+    return send_gamepad_report();
 }

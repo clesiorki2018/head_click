@@ -2,20 +2,20 @@
 
 ## Objetivo
 
-Este projeto define a arquitetura inicial para um receptor USB HID baseado em ESP32-S3 com USB nativo. O dispositivo deve se comportar como teclado e mouse USB para um host PC.
+Este projeto define a arquitetura de um receptor USB HID baseado em ESP32-S3 com USB nativo. O dispositivo se comporta como teclado, mouse e gamepad USB para um host PC.
 
 O cenário previsto tem dois lados:
 
 - Transmissor: outro ESP32 lê sensores, botões, acelerômetro, IMU, comandos configuráveis ou qualquer outra entrada física.
 - Receptor: este projeto roda no ESP32-S3 conectado por USB ao computador, recebe comandos via ESP-NOW e os entrega ao sistema operacional como eventos HID.
 
-> Estado atual: a arquitetura de recebimento, mapeamento e despacho já existe. O serviço `hid_service` inicializa TinyUSB e envia relatórios HID reais de mouse e teclado. Joystick já existe no domínio e no protocolo ESP-NOW, mas ainda precisa de um report descriptor USB HID próprio para aparecer como gamepad no sistema operacional.
+> Estado atual: a arquitetura de recebimento, mapeamento e despacho já existe. O serviço `hid_service` inicializa TinyUSB e envia relatórios HID reais de mouse, teclado e gamepad. Joystick já existe no domínio, no protocolo ESP-NOW e no report descriptor USB HID.
 
 ## Arquitetura
 
 - `main/app_main.c` - inicialização do firmware e componentes principais.
 - `components/core` - barramento de eventos central com fila FreeRTOS.
-- `components/hid` - serviço HID que exporta ações de teclado e mouse.
+- `components/hid` - serviço HID que exporta ações de teclado, mouse e gamepad.
 - `components/input` - domínio de eventos e mapeamento de pacotes ESP-NOW em eventos de input.
 - `components/transport_espnow` - transporte ESP-NOW para recebimento de comandos sem fio.
 - `components/app` - controlador que consome eventos e dispara o serviço HID.
@@ -46,7 +46,7 @@ O fluxo completo, considerando o firmware final com HID USB implementado, é:
 8. `hid_service` gera o relatório USB HID.
 9. O host USB recebe o relatório pelo barramento USB.
 10. O sistema operacional interpreta o dispositivo como HID padrão.
-11. Aplicativos recebem eventos normais de teclado e mouse, como se viessem de periféricos USB comuns.
+11. Aplicativos recebem eventos normais de teclado, mouse e gamepad, como se viessem de periféricos USB comuns.
 
 Na arquitetura atual, os opcodes iniciais são:
 
@@ -60,16 +60,16 @@ Na arquitetura atual, os opcodes iniciais são:
 
 `dx`, `dy`, `x`, `y`, `z` e `rz` são inteiros de 16 bits em little-endian. `pressed` usa `0` para solto e qualquer valor diferente de zero para pressionado. O receptor rejeita payloads com tamanho diferente do esperado para cada opcode.
 
-## Teclado e mouse ao mesmo tempo
+## Teclado, mouse e joystick ao mesmo tempo
 
-Sim, o projeto pode ser evoluído para receber teclado e mouse ao mesmo tempo. O modelo de domínio já separa eventos de mouse e teclado em `input_event_t`, e o `app_controller` já despacha cada tipo para uma função específica de HID.
+Sim, o projeto recebe comandos de teclado, mouse e joystick no mesmo receptor. O modelo de domínio separa esses eventos em `input_event_t`, e o `app_controller` despacha cada tipo para uma função específica de HID.
 
 Existem duas formas comuns de expor isso ao sistema operacional:
 
-- Dispositivo HID composto: um único dispositivo USB com interface de mouse e interface de teclado.
-- Dispositivo HID com múltiplos report IDs: uma interface HID que diferencia relatórios de mouse e teclado por ID.
+- Dispositivo HID composto: um único dispositivo USB com interfaces separadas.
+- Dispositivo HID com múltiplos report IDs: uma interface HID que diferencia relatórios de teclado, mouse e gamepad por ID.
 
-Para o usuário do computador, o resultado esperado é o mesmo: o sistema operacional enxerga um teclado e um mouse HID padrão. Os eventos chegam em sequência pela fila, mas podem representar comandos misturados, como mover o mouse, clicar, pressionar `Ctrl`, pressionar uma tecla e soltar tudo depois.
+Este projeto usa múltiplos report IDs em uma interface HID. Para o usuário do computador, o sistema operacional enxerga entradas HID padrão. Os eventos chegam em sequência pela fila, mas podem representar comandos misturados, como mover o mouse, clicar, pressionar `Ctrl`, acionar uma tecla, mover um eixo de joystick e soltar tudo depois.
 
 A configuração de quais teclas, cliques e movimentos enviar deve ficar no ESP32 transmissor. Este receptor deve continuar simples: validar pacote, mapear para evento de domínio e publicar no HID. Isso preserva a separação de responsabilidades:
 
