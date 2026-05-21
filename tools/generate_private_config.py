@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 PEER_SLOTS = 4
+MAX_SEQUENCE_WINDOW = 64
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -41,6 +42,14 @@ def env_int(values: dict[str, str], key: str, default: int) -> int:
         return default
 
     return int(raw_value, 0)
+
+
+def env_int_range(values: dict[str, str], key: str, default: int, minimum: int, maximum: int) -> int:
+    value = env_int(values, key, default)
+    if value < minimum or value > maximum:
+        raise ValueError(f"{key} must be between {minimum} and {maximum}")
+
+    return value
 
 
 def c_string(value: str) -> str:
@@ -81,6 +90,9 @@ def c_bytes(values: list[int]) -> str:
 
 def generate_header(values: dict[str, str]) -> str:
     has_env = bool(values)
+    wifi_channel = env_int_range(values, "ESP_NOW_WIFI_CHANNEL", 6, 1, 14)
+    max_peers = env_int_range(values, "ESP_NOW_MAX_PEERS", PEER_SLOTS, 0, PEER_SLOTS)
+    sequence_window = env_int_range(values, "APP_SEQUENCE_WINDOW", 32, 1, MAX_SEQUENCE_WINDOW)
     pmk = hex_bytes(values.get("ESP_NOW_PMK_HEX", ""), 16, "ESP_NOW_PMK_HEX")
     auth_key = hex_bytes(values.get("APP_AUTH_KEY_HEX", ""), 32, "APP_AUTH_KEY_HEX")
 
@@ -89,12 +101,12 @@ def generate_header(values: dict[str, str]) -> str:
         "#pragma once",
         "",
         f"#define HEAD_CLICK_CONFIG_HAS_ENV {1 if has_env else 0}",
-        f"#define HEAD_CLICK_ESP_NOW_WIFI_CHANNEL {env_int(values, 'ESP_NOW_WIFI_CHANNEL', 6)}",
+        f"#define HEAD_CLICK_ESP_NOW_WIFI_CHANNEL {wifi_channel}",
         f"#define HEAD_CLICK_ESP_NOW_ENCRYPTION_ENABLED {1 if env_bool(values, 'ESP_NOW_ENCRYPTION_ENABLED', False) else 0}",
         f"#define HEAD_CLICK_ESP_NOW_PAIRING_ENABLED {1 if env_bool(values, 'ESP_NOW_PAIRING_ENABLED', False) else 0}",
-        f"#define HEAD_CLICK_ESP_NOW_MAX_PEERS {env_int(values, 'ESP_NOW_MAX_PEERS', PEER_SLOTS)}",
+        f"#define HEAD_CLICK_ESP_NOW_MAX_PEERS {max_peers}",
         f"#define HEAD_CLICK_APP_REPLAY_PROTECTION_ENABLED {1 if env_bool(values, 'APP_REPLAY_PROTECTION_ENABLED', True) else 0}",
-        f"#define HEAD_CLICK_APP_SEQUENCE_WINDOW {env_int(values, 'APP_SEQUENCE_WINDOW', 32)}",
+        f"#define HEAD_CLICK_APP_SEQUENCE_WINDOW {sequence_window}",
         f"#define HEAD_CLICK_ESP_NOW_PMK_BYTES {c_bytes(pmk)}",
         f"#define HEAD_CLICK_APP_AUTH_KEY_BYTES {c_bytes(auth_key)}",
         "",

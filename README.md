@@ -134,6 +134,8 @@ Configuração mínima do transmissor:
 
 Para comunicação estável, transmissor e receptor devem usar o mesmo canal. Se o receptor também estiver conectado a uma rede Wi-Fi, o canal geralmente fica preso ao canal do AP. Para um produto dedicado, é mais previsível fixar um canal e manter ambos os ESP32 nele.
 
+O gerador de configuração valida `ESP_NOW_WIFI_CHANNEL` entre `1` e `14`, `ESP_NOW_MAX_PEERS` entre `0` e `4`, e `APP_SEQUENCE_WINDOW` entre `1` e `64`. O receptor só percorre os primeiros `ESP_NOW_MAX_PEERS` slots de peer.
+
 ## Configuração dos transmissores
 
 Em uma instalação com dois ou mais ESP32 transmissores, a configuração é espelhada:

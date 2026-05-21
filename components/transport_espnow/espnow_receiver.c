@@ -57,6 +57,17 @@ static const char *enabled_label(bool enabled)
     return enabled ? "enabled" : "disabled";
 }
 
+static size_t configured_peer_limit(void)
+{
+    const system_config_security_t *config = system_config_get_security();
+
+    if (config->max_peers > SYSTEM_CONFIG_MAX_PEERS) {
+        return SYSTEM_CONFIG_MAX_PEERS;
+    }
+
+    return config->max_peers;
+}
+
 static void format_mac(const uint8_t mac[SYSTEM_CONFIG_MAC_SIZE], char *buffer, size_t buffer_size)
 {
     snprintf(buffer,
@@ -106,7 +117,7 @@ static const system_config_esp_now_peer_t *espnow_find_authorized_sender(const e
         return NULL;
     }
 
-    for (size_t index = 0; index < SYSTEM_CONFIG_MAX_PEERS; ++index) {
+    for (size_t index = 0; index < configured_peer_limit(); ++index) {
         const system_config_esp_now_peer_t *peer = &config->peers[index];
 
         if (peer->enabled && peer->has_mac && mac_matches(peer->mac, info->src_addr)) {
@@ -192,7 +203,7 @@ static esp_err_t espnow_verify_app_packet(const uint8_t *data, size_t len)
     status = psa_mac_compute(key_id,
                              PSA_ALG_HMAC(PSA_ALG_SHA_256),
                              data,
-                                 len - ESPNOW_APP_PROTOCOL_TAG_SIZE,
+                             len - ESPNOW_APP_PROTOCOL_TAG_SIZE,
                              digest,
                              sizeof(digest),
                              &digest_len);
@@ -326,7 +337,7 @@ static esp_err_t espnow_add_configured_peers(void)
     const system_config_security_t *config = system_config_get_security();
     size_t added_peers = 0;
 
-    for (size_t index = 0; index < SYSTEM_CONFIG_MAX_PEERS; ++index) {
+    for (size_t index = 0; index < configured_peer_limit(); ++index) {
         const system_config_esp_now_peer_t *configured_peer = &config->peers[index];
 
         if (!configured_peer->enabled) {
@@ -387,8 +398,9 @@ static esp_err_t espnow_configure_security(void)
     bool app_auth_enabled = app_auth_key_is_configured(config);
 
     ESP_LOGI(TAG,
-             "ESP-NOW security channel=%u encryption=%s pairing=%s app_auth=%s replay=%s sequence_window=%u",
+             "ESP-NOW security channel=%u max_peers=%u encryption=%s pairing=%s app_auth=%s replay=%s sequence_window=%u",
              config->wifi_channel,
+             config->max_peers,
              enabled_label(config->encryption_enabled),
              enabled_label(config->pairing_enabled),
              enabled_label(app_auth_enabled),
