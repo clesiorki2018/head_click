@@ -22,13 +22,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "esp_err.h"
 #include "input_event.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-input_event_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_size);
+esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_size, input_event_t *event);
 
 #ifdef __cplusplus
 }

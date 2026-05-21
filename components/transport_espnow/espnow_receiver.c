@@ -74,7 +74,12 @@ static void espnow_receive_cb(const esp_now_recv_info_t *info, const uint8_t *da
         return;
     }
 
-    input_event_t event = input_mapper_map_from_espnow(data, (size_t)len);
+    input_event_t event;
+    if (input_mapper_map_from_espnow(data, (size_t)len, &event) != ESP_OK) {
+        ESP_LOGW(TAG, "Rejected invalid ESP-NOW input payload");
+        return;
+    }
+
     if (event_bus_publish_wait(&event, 0) != ESP_OK) {
         ESP_LOGW(TAG, "Failed to publish input event");
     }

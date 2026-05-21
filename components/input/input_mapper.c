@@ -23,46 +23,64 @@
 
 static const char *TAG = "input_mapper";
 
-input_event_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_size)
+static int16_t read_i16_le(const uint8_t *data)
 {
-    input_event_t event = {
-        .type = INPUT_EVENT_SYSTEM,
-        .data.system = {.code = 0},
-    };
+    return (int16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8));
+}
+
+static esp_err_t require_payload_size(size_t actual_size, size_t expected_size, uint8_t opcode)
+{
+    if (actual_size != expected_size) {
+        ESP_LOGW(TAG, "Invalid ESP-NOW payload size opcode=0x%02x size=%u expected=%u",
+                 opcode, (unsigned int)actual_size, (unsigned int)expected_size);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_size, input_event_t *event)
+{
+    if (event == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     if (payload == NULL || payload_size == 0) {
         ESP_LOGW(TAG, "Received empty ESP-NOW payload");
-        return event;
+        return ESP_ERR_INVALID_ARG;
     }
 
     uint8_t opcode = payload[0];
     switch (opcode) {
     case 0x01:
-        if (payload_size >= 5) {
-            event.type = INPUT_EVENT_MOUSE_MOVE;
-            event.data.mouse_move.dx = (int16_t)(payload[1] | (payload[2] << 8));
-            event.data.mouse_move.dy = (int16_t)(payload[3] | (payload[4] << 8));
+        if (require_payload_size(payload_size, 5, opcode) != ESP_OK) {
+            return ESP_ERR_INVALID_SIZE;
         }
-        break;
-    case 0x02:
-        if (payload_size >= 3) {
-            event.type = INPUT_EVENT_MOUSE_BUTTON;
-            event.data.mouse_button.button = payload[1];
-            event.data.mouse_button.pressed = payload[2] != 0;
-        }
-        break;
-    case 0x03:
-        if (payload_size >= 3) {
-            event.type = INPUT_EVENT_KEYBOARD_KEY;
-            event.data.keyboard_key.keycode = payload[1];
-            event.data.keyboard_key.pressed = payload[2] != 0;
-        }
-        break;
-    default:
-        event.type = INPUT_EVENT_SYSTEM;
-        event.data.system.code = opcode;
-        break;
-    }
 
-    return event;
+        event->type = INPUT_EVENT_MOUSE_MOVE;
+        event->data.mouse_move.dx = read_i16_le(&payload[1]);
+        event->data.mouse_move.dy = read_i16_le(&payload[3]);
+        return ESP_OK;
+    case 0x02:
+        if (require_payload_size(payload_size, 3, opcode) != ESP_OK) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+
+        event->type = INPUT_EVENT_MOUSE_BUTTON;
+        event->data.mouse_button.button = payload[1];
+        event->data.mouse_button.pressed = payload[2] != 0;
+        return ESP_OK;
+    case 0x03:
+        if (require_payload_size(payload_size, 3, opcode) != ESP_OK) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+
+        event->type = INPUT_EVENT_KEYBOARD_KEY;
+        event->data.keyboard_key.keycode = payload[1];
+        event->data.keyboard_key.pressed = payload[2] != 0;
+        return ESP_OK;
+    default:
+        ESP_LOGW(TAG, "Unknown ESP-NOW opcode=0x%02x", opcode);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
 }
