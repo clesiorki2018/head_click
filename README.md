@@ -50,6 +50,8 @@ O fluxo completo, considerando o firmware final com HID USB implementado, é:
 
 Na arquitetura atual, os opcodes iniciais são:
 
+Os valores canônicos ficam em `components/input/include/input/input_protocol.h`, para o receptor e o firmware emissor usarem o mesmo contrato.
+
 | Opcode | Evento | Payload |
 | --- | --- | --- |
 | `0x01` | Movimento de mouse | `opcode`, `dx_lo`, `dx_hi`, `dy_lo`, `dy_hi` |

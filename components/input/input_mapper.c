@@ -20,6 +20,7 @@
 
 #include "esp_log.h"
 #include "input/input_mapper.h"
+#include "input/input_protocol.h"
 
 static const char *TAG = "input_mapper";
 
@@ -52,8 +53,8 @@ esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_si
 
     uint8_t opcode = payload[0];
     switch (opcode) {
-    case 0x01:
-        if (require_payload_size(payload_size, 5, opcode) != ESP_OK) {
+    case INPUT_PROTOCOL_OPCODE_MOUSE_MOVE:
+        if (require_payload_size(payload_size, INPUT_PROTOCOL_MOUSE_MOVE_SIZE, opcode) != ESP_OK) {
             return ESP_ERR_INVALID_SIZE;
         }
 
@@ -61,8 +62,8 @@ esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_si
         event->data.mouse_move.dx = read_i16_le(&payload[1]);
         event->data.mouse_move.dy = read_i16_le(&payload[3]);
         return ESP_OK;
-    case 0x02:
-        if (require_payload_size(payload_size, 3, opcode) != ESP_OK) {
+    case INPUT_PROTOCOL_OPCODE_MOUSE_BUTTON:
+        if (require_payload_size(payload_size, INPUT_PROTOCOL_MOUSE_BUTTON_SIZE, opcode) != ESP_OK) {
             return ESP_ERR_INVALID_SIZE;
         }
 
@@ -70,8 +71,8 @@ esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_si
         event->data.mouse_button.button = payload[1];
         event->data.mouse_button.pressed = payload[2] != 0;
         return ESP_OK;
-    case 0x03:
-        if (require_payload_size(payload_size, 3, opcode) != ESP_OK) {
+    case INPUT_PROTOCOL_OPCODE_KEYBOARD_KEY:
+        if (require_payload_size(payload_size, INPUT_PROTOCOL_KEYBOARD_KEY_SIZE, opcode) != ESP_OK) {
             return ESP_ERR_INVALID_SIZE;
         }
 
@@ -79,8 +80,8 @@ esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_si
         event->data.keyboard_key.keycode = payload[1];
         event->data.keyboard_key.pressed = payload[2] != 0;
         return ESP_OK;
-    case 0x04:
-        if (require_payload_size(payload_size, 9, opcode) != ESP_OK) {
+    case INPUT_PROTOCOL_OPCODE_JOYSTICK_AXIS:
+        if (require_payload_size(payload_size, INPUT_PROTOCOL_JOYSTICK_AXIS_SIZE, opcode) != ESP_OK) {
             return ESP_ERR_INVALID_SIZE;
         }
 
@@ -90,8 +91,8 @@ esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_si
         event->data.joystick_axis.z = read_i16_le(&payload[5]);
         event->data.joystick_axis.rz = read_i16_le(&payload[7]);
         return ESP_OK;
-    case 0x05:
-        if (require_payload_size(payload_size, 3, opcode) != ESP_OK) {
+    case INPUT_PROTOCOL_OPCODE_JOYSTICK_BUTTON:
+        if (require_payload_size(payload_size, INPUT_PROTOCOL_JOYSTICK_BUTTON_SIZE, opcode) != ESP_OK) {
             return ESP_ERR_INVALID_SIZE;
         }
 
