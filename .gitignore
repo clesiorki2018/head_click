@@ -23,6 +23,8 @@ partition_table/*.elf
 
 # Generated environment and flash args
 config.env
+sender_config.env
+sender_config.*
 *.flasher_args
 *.flash_args
 flasher_args.json
