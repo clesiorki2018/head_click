@@ -79,6 +79,26 @@ esp_err_t input_mapper_map_from_espnow(const uint8_t *payload, size_t payload_si
         event->data.keyboard_key.keycode = payload[1];
         event->data.keyboard_key.pressed = payload[2] != 0;
         return ESP_OK;
+    case 0x04:
+        if (require_payload_size(payload_size, 9, opcode) != ESP_OK) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+
+        event->type = INPUT_EVENT_JOYSTICK_AXIS;
+        event->data.joystick_axis.x = read_i16_le(&payload[1]);
+        event->data.joystick_axis.y = read_i16_le(&payload[3]);
+        event->data.joystick_axis.z = read_i16_le(&payload[5]);
+        event->data.joystick_axis.rz = read_i16_le(&payload[7]);
+        return ESP_OK;
+    case 0x05:
+        if (require_payload_size(payload_size, 3, opcode) != ESP_OK) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+
+        event->type = INPUT_EVENT_JOYSTICK_BUTTON;
+        event->data.joystick_button.button = payload[1];
+        event->data.joystick_button.pressed = payload[2] != 0;
+        return ESP_OK;
     default:
         ESP_LOGW(TAG, "Unknown ESP-NOW opcode=0x%02x", opcode);
         return ESP_ERR_NOT_SUPPORTED;

@@ -55,8 +55,10 @@ Na arquitetura atual, os opcodes iniciais são:
 | `0x01` | Movimento de mouse | `opcode`, `dx_lo`, `dx_hi`, `dy_lo`, `dy_hi` |
 | `0x02` | Botão de mouse | `opcode`, `button`, `pressed` |
 | `0x03` | Tecla de teclado | `opcode`, `keycode`, `pressed` |
+| `0x04` | Eixos de joystick | `opcode`, `x_lo`, `x_hi`, `y_lo`, `y_hi`, `z_lo`, `z_hi`, `rz_lo`, `rz_hi` |
+| `0x05` | Botão de joystick | `opcode`, `button`, `pressed` |
 
-`dx` e `dy` são inteiros de 16 bits em little-endian. `pressed` usa `0` para solto e qualquer valor diferente de zero para pressionado.
+`dx`, `dy`, `x`, `y`, `z` e `rz` são inteiros de 16 bits em little-endian. `pressed` usa `0` para solto e qualquer valor diferente de zero para pressionado. O receptor rejeita payloads com tamanho diferente do esperado para cada opcode.
 
 ## Teclado e mouse ao mesmo tempo
 

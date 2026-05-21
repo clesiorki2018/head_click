@@ -32,6 +32,8 @@ esp_err_t hid_service_init(void);
 esp_err_t hid_mouse_move(int16_t dx, int16_t dy);
 esp_err_t hid_mouse_button(uint8_t button, bool pressed);
 esp_err_t hid_keyboard_key(uint8_t keycode, bool pressed);
+esp_err_t hid_joystick_axis(int16_t x, int16_t y, int16_t z, int16_t rz);
+esp_err_t hid_joystick_button(uint8_t button, bool pressed);
 
 #ifdef __cplusplus
 }

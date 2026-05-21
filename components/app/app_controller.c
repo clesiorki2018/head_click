@@ -44,6 +44,16 @@ static void app_controller_task(void *arg)
             case INPUT_EVENT_KEYBOARD_KEY:
                 hid_keyboard_key(event.data.keyboard_key.keycode, event.data.keyboard_key.pressed);
                 break;
+            case INPUT_EVENT_JOYSTICK_AXIS:
+                hid_joystick_axis(event.data.joystick_axis.x,
+                                  event.data.joystick_axis.y,
+                                  event.data.joystick_axis.z,
+                                  event.data.joystick_axis.rz);
+                break;
+            case INPUT_EVENT_JOYSTICK_BUTTON:
+                hid_joystick_button(event.data.joystick_button.button,
+                                    event.data.joystick_button.pressed);
+                break;
             case INPUT_EVENT_SYSTEM:
                 ESP_LOGI(TAG, "System event code=%u", event.data.system.code);
                 break;

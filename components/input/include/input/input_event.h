@@ -27,6 +27,8 @@ typedef enum {
     INPUT_EVENT_MOUSE_MOVE = 0,
     INPUT_EVENT_MOUSE_BUTTON,
     INPUT_EVENT_KEYBOARD_KEY,
+    INPUT_EVENT_JOYSTICK_AXIS,
+    INPUT_EVENT_JOYSTICK_BUTTON,
     INPUT_EVENT_SYSTEM,
 } input_event_type_t;
 
@@ -46,6 +48,18 @@ typedef struct {
 } input_keyboard_key_t;
 
 typedef struct {
+    int16_t x;
+    int16_t y;
+    int16_t z;
+    int16_t rz;
+} input_joystick_axis_t;
+
+typedef struct {
+    uint8_t button;
+    bool pressed;
+} input_joystick_button_t;
+
+typedef struct {
     uint32_t code;
 } input_system_event_t;
 
@@ -55,6 +69,8 @@ typedef struct {
         input_mouse_move_t mouse_move;
         input_mouse_button_t mouse_button;
         input_keyboard_key_t keyboard_key;
+        input_joystick_axis_t joystick_axis;
+        input_joystick_button_t joystick_button;
         input_system_event_t system;
     } data;
 } input_event_t;

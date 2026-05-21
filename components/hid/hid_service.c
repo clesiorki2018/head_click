@@ -46,3 +46,15 @@ esp_err_t hid_keyboard_key(uint8_t keycode, bool pressed)
     ESP_LOGI(TAG, "HID keyboard key keycode=%u pressed=%d", keycode, pressed);
     return ESP_OK;
 }
+
+esp_err_t hid_joystick_axis(int16_t x, int16_t y, int16_t z, int16_t rz)
+{
+    ESP_LOGI(TAG, "HID joystick axis x=%d y=%d z=%d rz=%d", x, y, z, rz);
+    return ESP_OK;
+}
+
+esp_err_t hid_joystick_button(uint8_t button, bool pressed)
+{
+    ESP_LOGI(TAG, "HID joystick button button=%u pressed=%d", button, pressed);
+    return ESP_OK;
+}
