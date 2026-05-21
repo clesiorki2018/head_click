@@ -18,6 +18,7 @@
  * limitations under the License.
  */
 
+#include <stdio.h>
 #include <string.h>
 #include "psa/crypto.h"
 #include "esp_log.h"
@@ -52,6 +53,24 @@ static bool mac_matches(const uint8_t lhs[SYSTEM_CONFIG_MAC_SIZE],
                         const uint8_t rhs[SYSTEM_CONFIG_MAC_SIZE])
 {
     return memcmp(lhs, rhs, SYSTEM_CONFIG_MAC_SIZE) == 0;
+}
+
+static const char *enabled_label(bool enabled)
+{
+    return enabled ? "enabled" : "disabled";
+}
+
+static void format_mac(const uint8_t mac[SYSTEM_CONFIG_MAC_SIZE], char *buffer, size_t buffer_size)
+{
+    snprintf(buffer,
+             buffer_size,
+             "%02x:%02x:%02x:%02x:%02x:%02x",
+             mac[0],
+             mac[1],
+             mac[2],
+             mac[3],
+             mac[4],
+             mac[5]);
 }
 
 static uint32_t read_u32_le(const uint8_t *data)
@@ -322,6 +341,9 @@ static esp_err_t espnow_add_configured_peers(void)
             continue;
         }
 
+        char mac_text[18];
+        format_mac(configured_peer->mac, mac_text, sizeof(mac_text));
+
         esp_now_peer_info_t peer = {
             .channel = config->wifi_channel,
             .ifidx = WIFI_IF_STA,
@@ -346,6 +368,12 @@ static esp_err_t espnow_add_configured_peers(void)
             return err;
         }
 
+        ESP_LOGI(TAG,
+                 "Authorized ESP-NOW peer slot=%u name='%s' mac=%s encrypted=%s",
+                 (unsigned int)(index + 1),
+                 configured_peer->name,
+                 mac_text,
+                 enabled_label(config->encryption_enabled));
         ++added_peers;
     }
 
@@ -359,17 +387,31 @@ static esp_err_t espnow_add_configured_peers(void)
 static esp_err_t espnow_configure_security(void)
 {
     const system_config_security_t *config = system_config_get_security();
+    bool app_auth_enabled = app_auth_key_is_configured(config);
+
+    ESP_LOGI(TAG,
+             "ESP-NOW security channel=%u encryption=%s pairing=%s app_auth=%s replay=%s sequence_window=%u",
+             config->wifi_channel,
+             enabled_label(config->encryption_enabled),
+             enabled_label(config->pairing_enabled),
+             enabled_label(app_auth_enabled),
+             enabled_label(config->replay_protection_enabled),
+             config->sequence_window);
 
     if (!config->has_env) {
         ESP_LOGW(TAG, "No local .env configuration found; ESP-NOW peers are not configured");
     }
 
-    if (config->replay_protection_enabled && !app_auth_key_is_configured(config)) {
+    if (config->pairing_enabled) {
+        ESP_LOGW(TAG, "ESP-NOW pairing mode accepts unknown senders; use only during provisioning");
+    }
+
+    if (config->replay_protection_enabled && !app_auth_enabled) {
         ESP_LOGE(TAG, "Replay protection requires APP_AUTH_KEY_HEX");
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (app_auth_key_is_configured(config)) {
+    if (app_auth_enabled) {
         psa_status_t status = psa_crypto_init();
         if (status != PSA_SUCCESS) {
             ESP_LOGE(TAG, "PSA crypto init failed: %d", (int)status);

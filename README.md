@@ -188,6 +188,8 @@ Antes de gravar os transmissores:
 4. Preencha `ESP_NOW_PEER_<n>_MAC` no `.env` do receptor.
 5. Compile e grave receptor e transmissores com canal, PMK e LMKs compatíveis.
 
+Ao iniciar, o receptor registra no monitor serial um resumo seguro da configuração ESP-NOW: canal, criptografia, pareamento, autenticação de aplicação, replay e peers autorizados. Esses logs mostram MACs e nomes dos peers, mas não imprimem PMK, LMK nem `APP_AUTH_KEY_HEX`.
+
 No firmware de um transmissor, o peer ESP-NOW deve apontar para o receptor:
 
 ```c
