@@ -125,20 +125,32 @@ Em uma instalação com dois ou mais ESP32 transmissores, a configuração é es
 - O receptor conhece os transmissores autorizados.
 - Cada transmissor conhece apenas o receptor para o qual deve enviar comandos.
 
-No receptor, o arquivo `.env` local deve conter o MAC Wi-Fi STA de cada transmissor:
+No receptor, o arquivo `.env` local deve conter o MAC Wi-Fi STA de cada transmissor. A configuração inicial recomendada é um emissor `combo`, capaz de enviar comandos de mouse, teclado e joystick:
 
 ```env
-ESP_NOW_PEER_1_NAME=mouse
+ESP_NOW_PEER_1_NAME=combo
 ESP_NOW_PEER_1_MAC=AA:BB:CC:DD:EE:01
 ESP_NOW_PEER_1_LMK_HEX=...
+ESP_NOW_PEER_1_ENABLED=1
+```
 
-ESP_NOW_PEER_2_NAME=keyboard
+Se o projeto crescer para emissores físicos separados, cadastre cada um como peer dedicado:
+
+```env
+ESP_NOW_PEER_2_NAME=mouse
 ESP_NOW_PEER_2_MAC=AA:BB:CC:DD:EE:02
 ESP_NOW_PEER_2_LMK_HEX=...
+ESP_NOW_PEER_2_ENABLED=1
 
-ESP_NOW_PEER_3_NAME=joystick
+ESP_NOW_PEER_3_NAME=keyboard
 ESP_NOW_PEER_3_MAC=AA:BB:CC:DD:EE:03
 ESP_NOW_PEER_3_LMK_HEX=...
+ESP_NOW_PEER_3_ENABLED=1
+
+ESP_NOW_PEER_4_NAME=joystick
+ESP_NOW_PEER_4_MAC=AA:BB:CC:DD:EE:04
+ESP_NOW_PEER_4_LMK_HEX=...
+ESP_NOW_PEER_4_ENABLED=1
 ```
 
 Em cada transmissor, grave:
@@ -149,7 +161,7 @@ Em cada transmissor, grave:
 - LMK específica daquele transmissor.
 - Chave de autenticação da aplicação, quando a validação HMAC/replay estiver habilitada.
 
-Cada transmissor deve usar apenas a LMK do seu papel. Por exemplo, o ESP32 de mouse usa a LMK do peer `mouse`; o ESP32 de teclado usa a LMK do peer `keyboard`; o ESP32 de joystick usa a LMK do peer `joystick`. Isso permite revogar ou trocar a chave de um transmissor sem trocar todas as outras.
+Cada transmissor deve usar apenas a LMK do seu papel. Por exemplo, o ESP32 `combo` usa a LMK do peer `combo`; o ESP32 de mouse usa a LMK do peer `mouse`; o ESP32 de teclado usa a LMK do peer `keyboard`; o ESP32 de joystick usa a LMK do peer `joystick`. Isso permite revogar ou trocar a chave de um transmissor sem trocar todas as outras.
 
 O arquivo local `sender_config.env` é gerado para ajudar o provisionamento dos transmissores. Ele contém os dados que devem ser copiados para cada emissor e é ignorado pelo Git porque contém segredos.
 
