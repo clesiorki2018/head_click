@@ -1,6 +1,8 @@
 set(GENERATED_CONFIG_DIR "${CMAKE_BINARY_DIR}/generated/head_click")
 set(GENERATED_CONFIG_HEADER "${GENERATED_CONFIG_DIR}/head_click_private_config.h")
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_DIR}/.env")
+
 if(DEFINED PYTHON)
     set(HEAD_CLICK_PYTHON "${PYTHON}")
 else()

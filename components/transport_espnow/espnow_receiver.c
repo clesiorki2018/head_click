@@ -57,6 +57,11 @@ static const char *enabled_label(bool enabled)
     return enabled ? "enabled" : "disabled";
 }
 
+static const char *accept_label(bool accepted)
+{
+    return accepted ? "accepted" : "rejected";
+}
+
 static size_t configured_peer_limit(void)
 {
     const system_config_security_t *config = system_config_get_security();
@@ -222,6 +227,25 @@ static esp_err_t espnow_verify_app_packet(const uint8_t *data, size_t len)
     return diff == 0 ? ESP_OK : ESP_ERR_INVALID_CRC;
 }
 
+static void espnow_log_rx_result(const esp_now_recv_info_t *info,
+                                 int len,
+                                 bool accepted,
+                                 const char *reason)
+{
+    char mac_text[18] = "unknown";
+
+    if (info != NULL && info->src_addr != NULL) {
+        format_mac(info->src_addr, mac_text, sizeof(mac_text));
+    }
+
+    ESP_LOGI(TAG,
+             "ESP-NOW RX src=%s len=%d result=%s reason=%s",
+             mac_text,
+             len,
+             accept_label(accepted),
+             reason);
+}
+
 static esp_err_t espnow_unwrap_app_payload(const uint8_t *data,
                                            size_t len,
                                            size_t peer_index,
@@ -266,12 +290,12 @@ static void espnow_receive_cb(const esp_now_recv_info_t *info, const uint8_t *da
     size_t peer_index = SYSTEM_CONFIG_MAX_PEERS;
 
     if (data == NULL || len <= 0) {
-        ESP_LOGW(TAG, "Received empty ESP-NOW packet");
+        espnow_log_rx_result(info, len, false, "empty_packet");
         return;
     }
 
     if (espnow_find_authorized_sender(info, &peer_index) == NULL && !config->pairing_enabled) {
-        ESP_LOGW(TAG, "Rejected ESP-NOW packet from unauthorized sender");
+        espnow_log_rx_result(info, len, false, "unauthorized_sender");
         return;
     }
 
@@ -282,20 +306,25 @@ static void espnow_receive_cb(const esp_now_recv_info_t *info, const uint8_t *da
                                                   &input_payload,
                                                   &input_payload_size);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Rejected unauthenticated ESP-NOW packet: %s", esp_err_to_name(err));
+            char reason[48];
+            snprintf(reason, sizeof(reason), "app_auth_%s", esp_err_to_name(err));
+            espnow_log_rx_result(info, len, false, reason);
             return;
         }
     }
 
     input_event_t event;
     if (input_mapper_map_from_espnow(input_payload, input_payload_size, &event) != ESP_OK) {
-        ESP_LOGW(TAG, "Rejected invalid ESP-NOW input payload");
+        espnow_log_rx_result(info, len, false, "invalid_input_payload");
         return;
     }
 
     if (event_bus_publish_wait(&event, 0) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to publish input event");
+        espnow_log_rx_result(info, len, false, "event_publish_failed");
+        return;
     }
+
+    espnow_log_rx_result(info, len, true, "input_event_published");
 }
 
 static esp_err_t wifi_init(void)
@@ -329,7 +358,40 @@ static esp_err_t wifi_init(void)
     }
 
     const system_config_security_t *config = system_config_get_security();
-    return esp_wifi_set_channel(config->wifi_channel, WIFI_SECOND_CHAN_NONE);
+    uint8_t sta_mac[SYSTEM_CONFIG_MAC_SIZE];
+    err = esp_wifi_get_mac(WIFI_IF_STA, sta_mac);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read local STA MAC: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    char sta_mac_text[18];
+    format_mac(sta_mac, sta_mac_text, sizeof(sta_mac_text));
+    ESP_LOGI(TAG, "Local Wi-Fi STA MAC: %s", sta_mac_text);
+
+    err = esp_wifi_set_channel(config->wifi_channel, WIFI_SECOND_CHAN_NONE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "Failed to set Wi-Fi channel %u: %s",
+                 config->wifi_channel,
+                 esp_err_to_name(err));
+        return err;
+    }
+
+    uint8_t primary_channel = 0;
+    wifi_second_chan_t second_channel = WIFI_SECOND_CHAN_NONE;
+    err = esp_wifi_get_channel(&primary_channel, &second_channel);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read Wi-Fi channel: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG,
+             "Wi-Fi channel configured: requested=%u actual=%u second=%d",
+             config->wifi_channel,
+             primary_channel,
+             (int)second_channel);
+    return ESP_OK;
 }
 
 static esp_err_t espnow_add_configured_peers(void)
@@ -365,7 +427,13 @@ static esp_err_t espnow_add_configured_peers(void)
 
         esp_err_t err = esp_now_add_peer(&peer);
         if (err == ESP_ERR_ESPNOW_EXIST) {
-            ESP_LOGI(TAG, "ESP-NOW peer '%s' already registered", configured_peer->name);
+            ESP_LOGI(TAG,
+                     "ESP-NOW peer already registered slot=%u name='%s' mac=%s channel=%u encrypt=%s",
+                     (unsigned int)(index + 1),
+                     configured_peer->name,
+                     mac_text,
+                     peer.channel,
+                     enabled_label(peer.encrypt));
             ++added_peers;
             continue;
         }
@@ -377,11 +445,12 @@ static esp_err_t espnow_add_configured_peers(void)
         }
 
         ESP_LOGI(TAG,
-                 "Authorized ESP-NOW peer slot=%u name='%s' mac=%s encrypted=%s",
+                 "esp_now_add_peer OK slot=%u name='%s' mac=%s channel=%u encrypt=%s",
                  (unsigned int)(index + 1),
                  configured_peer->name,
                  mac_text,
-                 enabled_label(config->encryption_enabled));
+                 peer.channel,
+                 enabled_label(peer.encrypt));
         ++added_peers;
     }
 
@@ -434,6 +503,8 @@ static esp_err_t espnow_configure_security(void)
             ESP_LOGE(TAG, "Failed to set ESP-NOW PMK: %s", esp_err_to_name(err));
             return err;
         }
+
+        ESP_LOGI(TAG, "esp_now_set_pmk OK");
     }
 
     return espnow_add_configured_peers();
@@ -452,6 +523,7 @@ esp_err_t espnow_receiver_init(void)
         ESP_LOGE(TAG, "ESP-NOW init failed: %s", esp_err_to_name(err));
         return err;
     }
+    ESP_LOGI(TAG, "esp_now_init %s", err == ESP_OK ? "OK" : "already initialized");
 
     err = espnow_configure_security();
     if (err != ESP_OK) {
@@ -463,6 +535,7 @@ esp_err_t espnow_receiver_init(void)
         ESP_LOGE(TAG, "Register receive callback failed: %s", esp_err_to_name(err));
         return err;
     }
+    ESP_LOGI(TAG, "esp_now_register_recv_cb OK");
 
     ESP_LOGI(TAG, "ESP-NOW receiver ready");
     return ESP_OK;
