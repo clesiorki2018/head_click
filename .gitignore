@@ -22,6 +22,7 @@ partition_table/*.map
 partition_table/*.elf
 
 # Generated environment and flash args
+AGENTS-emmiter.md
 config.env
 sender_config.env
 sender_config.*
