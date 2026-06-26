@@ -6,12 +6,46 @@ Este documento descreve o hardware alvo para o projeto `head_click`, um receptor
 
 ## Placa alvo
 
+- Modelo atual do receptor: ESP32-S3 N16
+- Chip reconhecido: ESP32-S3 QFN56, revisão v0.2
+- Flash detectada: 16 MB
+- PSRAM detectada: 8 MB embedded
+- MAC Wi-Fi STA: manter apenas em `.env` local ou anotações privadas, nunca em arquivo versionado
+- USB: USB nativo integrado ao chip ESP32-S3 para HID; porta USB-serial separada quando disponível para monitor/flash
+
+## Histórico de placas
+
+### ESP32-S3 Zero anterior
+
 - Modelo: ESP32-S3 Zero
 - Chip: ESP32-S3FH4R2
 - CPU: Xtensa LX7 dual-core (ou single-core dependendo da variante)
 - USB: USB nativo integrado ao chip ESP32-S3
 - RF: Wi-Fi 2.4 GHz com suporte a ESP-NOW
 - Memória: SRAM e flash on-board conforme especificado pela placa
+
+### Observação térmica da ESP32-S3 N16
+
+Registro de 2026-06-26:
+
+- A placa ESP32-S3 N16 atual não apresenta aquecimento perceptível no regulador.
+- O aquecimento observado fica no invólucro metálico do microcontrolador e na PCB ao redor do ESP32-S3.
+- Medição com termômetro infravermelho indicou aproximadamente 40 °C.
+- Esta temperatura, isoladamente, não caracteriza superaquecimento crítico para o ESP32-S3, mas deve continuar sendo monitorada junto com o sensor interno e com a temperatura do regulador.
+
+### LEDs observados na ESP32-S3 N16
+
+Registro de 2026-06-26:
+
+- A placa possui 4 LEDs visíveis.
+- Um LED fica piscando verde.
+- Dois LEDs ficam vermelhos continuamente.
+- Um dos LEDs vermelhos é fisicamente maior.
+- Sem o esquema elétrico da placa, não assumir que todos estes LEDs são controláveis por firmware.
+- Placas ESP32-S3 N16R8 visualmente semelhantes documentam um LED RGB WS2812 e três LEDs indicadores pequenos para PWR, TX e RX.
+- A foto local `foto-esp32s3n16r8.jpeg` mostra um LED quadrado grande com serigrafia `RGB`, compatível com LED RGB endereçável/WS2812.
+- Hipótese atual: apenas o LED quadrado `RGB` é controlável pelo firmware como LED de status; os LEDs pequenos provavelmente são ligados à alimentação ou ao conversor USB-serial e não devem ser tratados como LEDs livres de GPIO sem confirmar o esquema elétrico.
+- O firmware atual controla apenas o LED de status WS2812 configurado em `GPIO21`; se o WS2812 desta N16 estiver em outro GPIO, ajustar `STATUS_LED_GPIO` em `components/status_led/status_led.c`.
 
 ## Objetivo do hardware
 
