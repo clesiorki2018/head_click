@@ -56,7 +56,7 @@ Este projeto é uma base para um receptor USB HID de acessibilidade usando ESP32
 Para compilar com build em RAM:
 
 ```sh
-idf.py -B /mnt/rambuild/head_click build
+idf.py -B /tmp/head_click_build build
 ```
 
 Para atualizar a documentação, edite `docs/architecture.md` e adicione novos arquivos em `docs/`.

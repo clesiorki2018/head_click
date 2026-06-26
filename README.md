@@ -251,14 +251,14 @@ Uma estratégia segura para produção é:
 No diretório do projeto:
 
 ```sh
-idf.py -B /mnt/rambuild/head_click build
+idf.py -B /tmp/head_click_build build
 ```
 
 Se ainda não estiver usando o ambiente ESP-IDF:
 
 ```sh
 . $HOME/esp/esp-idf/export.sh
-idf.py -B /mnt/rambuild/head_click build
+idf.py -B /tmp/head_click_build build
 ```
 
 ## Variáveis de ambiente

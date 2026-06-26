@@ -31,12 +31,14 @@
 #include "core/event_bus.h"
 #include "input/input_mapper.h"
 #include "system_config/system_config.h"
+#include "status_led/status_led.h"
 #include "transport_espnow/espnow_app_protocol.h"
 #include "transport_espnow/espnow_receiver.h"
 
 static const char *TAG = "espnow_receiver";
 
 #define ESPNOW_APP_SEQUENCE_MAX_WINDOW 64
+#define ESPNOW_WIFI_MAX_TX_POWER_QDBM 8
 
 typedef struct {
     bool initialized;
@@ -324,6 +326,7 @@ static void espnow_receive_cb(const esp_now_recv_info_t *info, const uint8_t *da
         return;
     }
 
+    status_led_pulse_rx();
     espnow_log_rx_result(info, len, true, "input_event_published");
 }
 
@@ -355,6 +358,20 @@ static esp_err_t wifi_init(void)
     err = esp_wifi_start();
     if (err != ESP_OK) {
         return err;
+    }
+
+    err = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to set Wi-Fi power save: %s", esp_err_to_name(err));
+    }
+
+    err = esp_wifi_set_max_tx_power(ESPNOW_WIFI_MAX_TX_POWER_QDBM);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to limit Wi-Fi TX power: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG,
+                 "Wi-Fi TX power limited to %.2f dBm",
+                 (double)ESPNOW_WIFI_MAX_TX_POWER_QDBM / 4.0);
     }
 
     const system_config_security_t *config = system_config_get_security();

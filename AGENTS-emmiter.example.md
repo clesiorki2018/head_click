@@ -17,7 +17,7 @@ Se a placa aparecer em outra porta, troque `/dev/ttyACM0` por `/dev/ttyUSB0` ou 
 Quando o receptor ja estiver gravado, abra o monitor serial e copie a linha:
 
 ```sh
-idf.py -B /mnt/rambuild/head_click -p /dev/ttyACM0 monitor
+idf.py -B /tmp/head_click_build -p /dev/ttyACM0 monitor
 ```
 
 Procure:

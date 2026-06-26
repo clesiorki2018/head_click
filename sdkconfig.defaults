@@ -1,2 +1,12 @@
 # USB HID device support.
 CONFIG_TINYUSB_HID_COUNT=1
+
+# ESP32-S3 N16 detected with 16 MB flash and 8 MB embedded PSRAM.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# Keep the receiver cooler when the HID/ESP-NOW workload is idle.
+CONFIG_PM_ENABLE=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y

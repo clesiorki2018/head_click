@@ -49,7 +49,7 @@ git commit -m "feat: add ESP-NOW receiver stub"
 Execute o build antes de submeter alterações:
 
 ```sh
-idf.py -B /mnt/rambuild/head_click build
+idf.py -B /tmp/head_click_build build
 ```
 
 ## Pull Request

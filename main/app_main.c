@@ -20,35 +20,99 @@
 
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_pm.h"
 #include "core/event_bus.h"
 #include "hid/hid_service.h"
 #include "transport_espnow/espnow_receiver.h"
 #include "app/app_controller.h"
+#include "status_led/status_led.h"
+#include "thermal_guard/thermal_guard.h"
 
 static const char *TAG = "app_main";
 
+static esp_err_t configure_power_management(void)
+{
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 80,
+        .min_freq_mhz = 40,
+        .light_sleep_enable = false,
+    };
+
+    esp_err_t err = esp_pm_configure(&pm_config);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG,
+                 "Power management configured: min=%dMHz max=%dMHz light_sleep=%s",
+                 pm_config.min_freq_mhz,
+                 pm_config.max_freq_mhz,
+                 pm_config.light_sleep_enable ? "enabled" : "disabled");
+    }
+
+    return err;
+}
+
+static void enter_fatal_state(const char *step, esp_err_t err)
+{
+    ESP_LOGE(TAG, "%s failed: %s", step, esp_err_to_name(err));
+    status_led_set_state(STATUS_LED_STATE_ERROR);
+
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
 void app_main(void)
 {
+    (void)status_led_init();
+    status_led_set_state(STATUS_LED_STATE_BOOTING);
+
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(err);
+    if (err != ESP_OK) {
+        enter_fatal_state("NVS init", err);
+    }
+
+    ESP_LOGI(TAG, "Configuring power management");
+    err = configure_power_management();
+    if (err != ESP_OK) {
+        enter_fatal_state("Power management config", err);
+    }
+
+    ESP_LOGI(TAG, "Starting thermal guard");
+    err = thermal_guard_init();
+    if (err != ESP_OK) {
+        enter_fatal_state("Thermal guard init", err);
+    }
 
     ESP_LOGI(TAG, "Initializing event bus");
-    ESP_ERROR_CHECK(event_bus_init());
+    err = event_bus_init();
+    if (err != ESP_OK) {
+        enter_fatal_state("Event bus init", err);
+    }
 
     ESP_LOGI(TAG, "Initializing HID service");
-    ESP_ERROR_CHECK(hid_service_init());
+    err = hid_service_init();
+    if (err != ESP_OK) {
+        enter_fatal_state("HID service init", err);
+    }
 
     ESP_LOGI(TAG, "Initializing ESP-NOW receiver");
-    ESP_ERROR_CHECK(espnow_receiver_init());
+    err = espnow_receiver_init();
+    if (err != ESP_OK) {
+        enter_fatal_state("ESP-NOW receiver init", err);
+    }
 
     ESP_LOGI(TAG, "Initializing application controller");
-    ESP_ERROR_CHECK(app_controller_init());
+    err = app_controller_init();
+    if (err != ESP_OK) {
+        enter_fatal_state("Application controller init", err);
+    }
 
+    status_led_set_state(STATUS_LED_STATE_READY);
     ESP_LOGI(TAG, "System ready");
 }
