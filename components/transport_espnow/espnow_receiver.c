@@ -47,6 +47,7 @@ typedef struct {
 } espnow_replay_state_t;
 
 static espnow_replay_state_t s_replay_states[SYSTEM_CONFIG_MAX_PEERS];
+static psa_key_id_t s_app_auth_key_id = PSA_KEY_ID_NULL;
 
 static bool mac_matches(const uint8_t lhs[SYSTEM_CONFIG_MAC_SIZE],
                         const uint8_t rhs[SYSTEM_CONFIG_MAC_SIZE])
@@ -181,40 +182,21 @@ static bool espnow_sequence_is_fresh(size_t peer_index, uint32_t sequence)
 
 static esp_err_t espnow_verify_app_packet(const uint8_t *data, size_t len)
 {
-    const system_config_security_t *config = system_config_get_security();
     uint8_t digest[32];
     size_t digest_len = 0;
 
-    if (!app_auth_key_is_configured(config)) {
-        ESP_LOGE(TAG, "Application authentication key is not configured");
+    if (s_app_auth_key_id == PSA_KEY_ID_NULL) {
+        ESP_LOGE(TAG, "Application authentication key is not initialized");
         return ESP_ERR_INVALID_STATE;
     }
 
-    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-    psa_key_id_t key_id = PSA_KEY_ID_NULL;
-
-    psa_set_key_type(&attributes, PSA_KEY_TYPE_HMAC);
-    psa_set_key_bits(&attributes, SYSTEM_CONFIG_APP_AUTH_KEY_SIZE * 8);
-    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
-    psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(PSA_ALG_SHA_256));
-
-    psa_status_t status = psa_import_key(&attributes,
-                                         config->app_auth_key,
-                                         SYSTEM_CONFIG_APP_AUTH_KEY_SIZE,
-                                         &key_id);
-    psa_reset_key_attributes(&attributes);
-    if (status != PSA_SUCCESS) {
-        return ESP_FAIL;
-    }
-
-    status = psa_mac_compute(key_id,
-                             PSA_ALG_HMAC(PSA_ALG_SHA_256),
-                             data,
-                             len - ESPNOW_APP_PROTOCOL_TAG_SIZE,
-                             digest,
-                             sizeof(digest),
-                             &digest_len);
-    psa_destroy_key(key_id);
+    psa_status_t status = psa_mac_compute(s_app_auth_key_id,
+                                          PSA_ALG_HMAC(PSA_ALG_SHA_256),
+                                          data,
+                                          len - ESPNOW_APP_PROTOCOL_TAG_SIZE,
+                                          digest,
+                                          sizeof(digest),
+                                          &digest_len);
     if (status != PSA_SUCCESS || digest_len < ESPNOW_APP_PROTOCOL_TAG_SIZE) {
         return ESP_FAIL;
     }
@@ -519,6 +501,23 @@ static esp_err_t espnow_configure_security(void)
         psa_status_t status = psa_crypto_init();
         if (status != PSA_SUCCESS) {
             ESP_LOGE(TAG, "PSA crypto init failed: %d", (int)status);
+            return ESP_FAIL;
+        }
+
+        psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+        psa_set_key_type(&attributes, PSA_KEY_TYPE_HMAC);
+        psa_set_key_bits(&attributes, SYSTEM_CONFIG_APP_AUTH_KEY_SIZE * 8);
+        psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
+        psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+
+        status = psa_import_key(&attributes,
+                                config->app_auth_key,
+                                SYSTEM_CONFIG_APP_AUTH_KEY_SIZE,
+                                &s_app_auth_key_id);
+        psa_reset_key_attributes(&attributes);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "Application authentication key import failed: %d",
+                     (int)status);
             return ESP_FAIL;
         }
     }
