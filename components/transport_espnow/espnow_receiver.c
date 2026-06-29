@@ -38,7 +38,7 @@
 static const char *TAG = "espnow_receiver";
 
 #define ESPNOW_APP_SEQUENCE_MAX_WINDOW 64
-#define ESPNOW_WIFI_MAX_TX_POWER_QDBM 8
+#define ESPNOW_WIFI_MAX_TX_POWER_QDBM 52
 
 typedef struct {
     bool initialized;
@@ -240,12 +240,21 @@ static void espnow_log_rx_result(const esp_now_recv_info_t *info,
         format_mac(info->src_addr, mac_text, sizeof(mac_text));
     }
 
-    ESP_LOGI(TAG,
-             "ESP-NOW RX src=%s len=%d result=%s reason=%s",
-             mac_text,
-             len,
-             accept_label(accepted),
-             reason);
+    if (accepted) {
+        ESP_LOGD(TAG,
+                 "ESP-NOW RX src=%s len=%d result=%s reason=%s",
+                 mac_text,
+                 len,
+                 accept_label(accepted),
+                 reason);
+    } else {
+        ESP_LOGW(TAG,
+                 "ESP-NOW RX src=%s len=%d result=%s reason=%s",
+                 mac_text,
+                 len,
+                 accept_label(accepted),
+                 reason);
+    }
 }
 
 static esp_err_t espnow_unwrap_app_payload(const uint8_t *data,
@@ -360,7 +369,7 @@ static esp_err_t wifi_init(void)
         return err;
     }
 
-    err = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    err = esp_wifi_set_ps(WIFI_PS_NONE);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to set Wi-Fi power save: %s", esp_err_to_name(err));
     }

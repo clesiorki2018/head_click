@@ -45,7 +45,9 @@ Registro de 2026-06-26:
 - Placas ESP32-S3 N16R8 visualmente semelhantes documentam um LED RGB WS2812 e três LEDs indicadores pequenos para PWR, TX e RX.
 - A foto local `foto-esp32s3n16r8.jpeg` mostra um LED quadrado grande com serigrafia `RGB`, compatível com LED RGB endereçável/WS2812.
 - Hipótese atual: apenas o LED quadrado `RGB` é controlável pelo firmware como LED de status; os LEDs pequenos provavelmente são ligados à alimentação ou ao conversor USB-serial e não devem ser tratados como LEDs livres de GPIO sem confirmar o esquema elétrico.
-- O firmware atual controla apenas o LED de status WS2812 configurado em `GPIO21`; se o WS2812 desta N16 estiver em outro GPIO, ajustar `STATUS_LED_GPIO` em `components/status_led/status_led.c`.
+- A placa foi identificada pelo layout como a YD-ESP32-S3 N16R8 de 44 pinos: o WS2812 `RGB` usa o `GPIO48`.
+- Para habilitar o sinal do RGB nesta revisão, feche com solda os dois pads marcados `RGB`, ao lado do LED. Sem esta ponte o firmware pode transmitir em `GPIO48`, mas o sinal não chega ao WS2812.
+- O firmware usa azul pulsante durante o boot, verde quando pronto, ciano na recepção, laranja no aviso térmico e vermelho rápido no corte térmico ou em erro.
 
 ## Objetivo do hardware
 

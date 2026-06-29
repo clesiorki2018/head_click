@@ -7,6 +7,6 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 
-# Keep the receiver cooler when the HID/ESP-NOW workload is idle.
+# Scale down while idle without throttling HID/ESP-NOW bursts.
 CONFIG_PM_ENABLE=y
-CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y

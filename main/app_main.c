@@ -36,8 +36,8 @@ static const char *TAG = "app_main";
 static esp_err_t configure_power_management(void)
 {
     esp_pm_config_t pm_config = {
-        .max_freq_mhz = 80,
-        .min_freq_mhz = 40,
+        .max_freq_mhz = 240,
+        .min_freq_mhz = 80,
         .light_sleep_enable = false,
     };
 

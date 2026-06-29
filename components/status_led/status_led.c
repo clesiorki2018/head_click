@@ -20,7 +20,7 @@
 
 static const char *TAG = "status_led";
 
-#define STATUS_LED_GPIO 21
+#define STATUS_LED_GPIO 48
 #define STATUS_LED_RMT_RESOLUTION_HZ 10000000
 #define STATUS_LED_TASK_STACK_SIZE 2048
 #define STATUS_LED_TASK_PRIORITY 2

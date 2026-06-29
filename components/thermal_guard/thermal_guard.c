@@ -21,10 +21,11 @@
 
 static const char *TAG = "thermal_guard";
 
-#define THERMAL_GUARD_RANGE_MIN_C (-10)
-#define THERMAL_GUARD_RANGE_MAX_C 80
-#define THERMAL_GUARD_WARNING_C 60.0f
-#define THERMAL_GUARD_CRITICAL_C 70.0f
+#define THERMAL_GUARD_RANGE_MIN_C 20
+#define THERMAL_GUARD_RANGE_MAX_C 100
+#define THERMAL_GUARD_WARNING_C 75.0f
+#define THERMAL_GUARD_WARNING_CLEAR_C 70.0f
+#define THERMAL_GUARD_CRITICAL_C 85.0f
 #define THERMAL_GUARD_POLL_MS 2000
 #define THERMAL_GUARD_TASK_STACK_SIZE 3072
 #define THERMAL_GUARD_TASK_PRIORITY 3
@@ -32,6 +33,7 @@ static const char *TAG = "thermal_guard";
 static temperature_sensor_handle_t s_temp_sensor;
 static TaskHandle_t s_thermal_task;
 static bool s_critical_shutdown;
+static bool s_warning_active;
 
 static void thermal_guard_enter_critical(float celsius)
 {
@@ -65,11 +67,16 @@ static void thermal_guard_task(void *arg)
 
         if (celsius >= THERMAL_GUARD_CRITICAL_C) {
             thermal_guard_enter_critical(celsius);
-        } else if (!s_critical_shutdown && celsius >= THERMAL_GUARD_WARNING_C) {
-            ESP_LOGW(TAG, "High internal temperature: %.1f C", (double)celsius);
-            status_led_set_state(STATUS_LED_STATE_THERMAL_WARNING);
         } else if (!s_critical_shutdown) {
-            status_led_set_state(STATUS_LED_STATE_READY);
+            if (!s_warning_active && celsius >= THERMAL_GUARD_WARNING_C) {
+                s_warning_active = true;
+                ESP_LOGW(TAG, "High internal temperature: %.1f C", (double)celsius);
+                status_led_set_state(STATUS_LED_STATE_THERMAL_WARNING);
+            } else if (s_warning_active && celsius <= THERMAL_GUARD_WARNING_CLEAR_C) {
+                s_warning_active = false;
+                ESP_LOGI(TAG, "Internal temperature recovered: %.1f C", (double)celsius);
+                status_led_set_state(STATUS_LED_STATE_READY);
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(THERMAL_GUARD_POLL_MS));
@@ -109,8 +116,9 @@ esp_err_t thermal_guard_init(void)
     }
 
     ESP_LOGI(TAG,
-             "Thermal guard active: warning=%.1f C critical=%.1f C",
+             "Thermal guard active: warning=%.1f C clear=%.1f C critical=%.1f C",
              (double)THERMAL_GUARD_WARNING_C,
+             (double)THERMAL_GUARD_WARNING_CLEAR_C,
              (double)THERMAL_GUARD_CRITICAL_C);
     return ESP_OK;
 }
